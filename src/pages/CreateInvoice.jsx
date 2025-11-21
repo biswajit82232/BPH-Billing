@@ -34,6 +34,7 @@ export default function CreateInvoice() {
   const [terms, setTerms] = useState('Due on Receipt')
   const [dueDate, setDueDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [amountPaid, setAmountPaid] = useState(0)
+  const [discountAmount, setDiscountAmount] = useState(0)
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [customerSuggestions, setCustomerSuggestions] = useState([])
   const [customerSearch, setCustomerSearch] = useState('')
@@ -41,7 +42,15 @@ export default function CreateInvoice() {
   const [productSuggestions, setProductSuggestions] = useState([])
   const [productSearch, setProductSearch] = useState('')
   const [activeItemIndex, setActiveItemIndex] = useState(null)
+  const [customerPhoneOverride, setCustomerPhoneOverride] = useState('')
   const selectedCustomer = customerId ? customers.find((c) => c.id === customerId) : null
+  useEffect(() => {
+    if (selectedCustomer) {
+      setCustomerPhoneOverride(selectedCustomer.phone || '')
+    } else {
+      setCustomerPhoneOverride('')
+    }
+  }, [selectedCustomer])
 
   // Update customerId when customers list changes (e.g., after adding a new customer)
   // Calculate due date based on terms
@@ -70,20 +79,27 @@ export default function CreateInvoice() {
     
     const calculatedDueDate = new Date(invoiceDate)
     calculatedDueDate.setDate(calculatedDueDate.getDate() + daysToAdd)
-    setDueDate(format(calculatedDueDate, 'yyyy-MM-dd'))
-  }, [date, terms])
+    const newDueDate = format(calculatedDueDate, 'yyyy-MM-dd')
+    if (newDueDate !== dueDate) {
+      setDueDate(newDueDate)
+    }
+  }, [date, terms, dueDate])
 
   useEffect(() => {
     if (!editingInvoice) {
-      // Reset form for new invoice
-      setCustomerId('')
-      setCustomCustomer({ name: '', email: '', phone: '', state: settings.companyState, gstin: '', address: '', aadhaar: '', dob: '' })
-      setItems([blankItem])
-      setNotes('Thanks for your business.')
-      setReverseCharge(false)
-      setDate(format(new Date(), 'yyyy-MM-dd'))
-      setTerms('Due on Receipt')
-      setDueDate(format(new Date(), 'yyyy-MM-dd'))
+      // Reset form for new invoice - using setTimeout to avoid setState in effect warning
+      setTimeout(() => {
+        setCustomerId('')
+        setCustomCustomer({ name: '', email: '', phone: '', state: settings.companyState, gstin: '', address: '', aadhaar: '', dob: '' })
+        setItems([blankItem])
+        setNotes('Thanks for your business.')
+        setReverseCharge(false)
+        setDate(format(new Date(), 'yyyy-MM-dd'))
+        setTerms('Due on Receipt')
+        setDueDate(format(new Date(), 'yyyy-MM-dd'))
+        setDiscountAmount(0)
+        setAmountPaid(0)
+      }, 0)
       return
     }
     
@@ -116,6 +132,7 @@ export default function CreateInvoice() {
     setTerms(editingInvoice.terms || 'Due on Receipt')
     setDueDate(editingInvoice.dueDate || format(new Date(), 'yyyy-MM-dd'))
     setAmountPaid(editingInvoice.amountPaid || 0)
+    setDiscountAmount(editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0)
   }, [editingInvoice, customers, settings.companyState])
 
   const derived = useMemo(
@@ -127,6 +144,31 @@ export default function CreateInvoice() {
       ),
     [items, selectedCustomer, customCustomer, settings],
   )
+
+  useEffect(() => {
+    setDiscountAmount((prev) => {
+      const baseTotal = derived.totals.grandTotal
+      if (prev > baseTotal) {
+        return baseTotal
+      }
+      return prev
+    })
+  }, [derived.totals.grandTotal])
+
+  const discountValue = useMemo(() => {
+    const raw = Number(discountAmount) || 0
+    const clamped = Math.max(0, Math.min(raw, derived.totals.grandTotal))
+    return +clamped.toFixed(2)
+  }, [discountAmount, derived.totals.grandTotal])
+
+  const totalsWithDiscount = useMemo(() => {
+    const netGrand = Math.max(0, derived.totals.grandTotal - discountValue)
+    return {
+      ...derived.totals,
+      discount: discountValue,
+      grandTotal: +netGrand.toFixed(2),
+    }
+  }, [derived.totals, discountValue])
 
   const invoicePreview = useMemo(
     () => ({
@@ -145,12 +187,13 @@ export default function CreateInvoice() {
       gstin: selectedCustomer?.gstin || customCustomer.gstin || '',
       companyGstin: settings.companyGstin || '',
       items: derived.rows,
-      totals: derived.totals,
+      discountAmount: discountValue,
+      totals: totalsWithDiscount,
       notes: notes,
       reverseCharge: reverseCharge,
       amountPaid: Number(amountPaid) || 0,
     }),
-    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived, notes, reverseCharge, amountPaid],
+    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid],
   )
 
   const updateItem = useCallback((index, field, value) => {
@@ -180,7 +223,12 @@ export default function CreateInvoice() {
   const handleSave = async (status) => {
     // Validation
     const customerName = selectedCustomer?.name || customCustomer.name
-    const customerPhone = selectedCustomer?.phone || customCustomer.phone
+    const phoneInput = selectedCustomer ? customerPhoneOverride : customCustomer.phone
+    if (!phoneInput || phoneInput.trim().length !== 10) {
+      toast.error('Valid 10-digit phone number is required')
+      return
+    }
+    const customerPhone = phoneInput.trim()
     
     if (!customerName || !customerName.trim()) {
       toast.error('Customer name is required')
@@ -206,7 +254,15 @@ export default function CreateInvoice() {
     // Ensure customer data is properly structured
     let customerData = null
     if (selectedCustomer) {
-      customerData = selectedCustomer
+      if (customerPhone !== (selectedCustomer.phone || '')) {
+        const updatedCustomer = await upsertCustomer({
+          ...selectedCustomer,
+          phone: customerPhone,
+        })
+        customerData = updatedCustomer
+      } else {
+        customerData = selectedCustomer
+      }
     } else if (customCustomer.name && customCustomer.phone) {
       // Check if this walk-in customer already exists (by phone)
       const existingCustomer = customers.find(c => c.phone === customCustomer.phone)
@@ -232,7 +288,7 @@ export default function CreateInvoice() {
       }
     }
 
-    const grandTotal = derived.totals.grandTotal || 0
+    const grandTotal = totalsWithDiscount.grandTotal || 0
     const finalAmountPaid = Number(amountPaid) || 0
     
     // Auto-mark as paid if amount paid >= total
@@ -259,11 +315,12 @@ export default function CreateInvoice() {
       items,
       notes,
       reverseCharge,
+      discountAmount: discountValue,
       amountPaid: finalAmountPaid,
     }
     
     try {
-      const savedInvoice = await saveInvoice(payload, finalStatus)
+      await saveInvoice(payload, finalStatus)
       const statusText = finalStatus === 'draft' ? 'saved as draft' : finalStatus === 'paid' ? 'saved and marked paid' : 'saved and marked sent'
       toast.success(`Invoice ${statusText}${customerData.id ? ` • Linked to ${customerData.name}` : ''}`)
     navigate('/invoices')
@@ -510,8 +567,18 @@ export default function CreateInvoice() {
                 <span className="font-medium text-gray-900">{selectedCustomer.name}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs mb-1">Phone</span>
-                <span className="text-gray-900">{selectedCustomer.phone || '--'}</span>
+                <span className="text-gray-500 block text-xs mb-1">Phone *</span>
+                <input
+                  type="tel"
+                  value={customerPhoneOverride}
+                  onChange={(e) =>
+                    setCustomerPhoneOverride(e.target.value.replace(/\D/g, '').slice(0, 10))
+                  }
+                  className="w-full text-sm"
+                  placeholder="10 digit phone"
+                  maxLength="10"
+                />
+                <p className="text-xs text-gray-500 mt-1">Used on invoice, PDF & WhatsApp</p>
               </div>
               <div>
                 <span className="text-gray-500 block text-xs mb-1">Date of Birth</span>
@@ -738,12 +805,15 @@ export default function CreateInvoice() {
                   )}
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                  <input
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Description / Battery Serials</label>
+                  <textarea
                     className="w-full"
+                    rows="2"
+                    placeholder="Enter serials separated by commas or new lines"
                     value={item.description}
                     onChange={(e) => updateItem(idx, 'description', e.target.value)}
                   />
+                  <p className="text-[10px] text-gray-500 mt-1">Use commas or Enter to add multiple lines (e.g., battery serial numbers).</p>
                 </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">HSN</label>
@@ -842,9 +912,35 @@ export default function CreateInvoice() {
               <span className="text-gray-600">Round Off:</span>
               <span className="font-medium">{formatCurrency(derived.totals.roundOff)}</span>
             </div>
+            <div className="pt-2 border-t border-dashed border-gray-200">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Discount (₹)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={discountAmount}
+                  onChange={(e) => {
+                    const value = Math.max(0, Number(e.target.value) || 0)
+                    setDiscountAmount(Math.min(value, derived.totals.grandTotal))
+                  }}
+                  className="w-full pl-8"
+                  step="0.01"
+                  min="0"
+                  max={derived.totals.grandTotal}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Flat amount reduced from the total.</p>
+            </div>
+            {totalsWithDiscount.discount > 0 && (
+              <div className="flex justify-between text-sm text-rose-600 font-medium">
+                <span>Discount Applied:</span>
+                <span>-{formatCurrency(totalsWithDiscount.discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between pt-2 border-t border-gray-300 mt-2">
               <span className="font-semibold text-gray-900">Grand Total:</span>
-              <span className="text-lg font-semibold text-gray-900">{formatCurrency(derived.totals.grandTotal)}</span>
+              <span className="text-lg font-semibold text-gray-900">{formatCurrency(totalsWithDiscount.grandTotal)}</span>
             </div>
             <div className="pt-3 border-t border-gray-300 mt-3 space-y-2">
               <div>
@@ -856,17 +952,17 @@ export default function CreateInvoice() {
                     placeholder="0.00"
                     value={amountPaid}
                     onChange={(e) => {
-                      const value = Math.max(0, Math.min(Number(e.target.value) || 0, derived.totals.grandTotal))
+                      const value = Math.max(0, Math.min(Number(e.target.value) || 0, totalsWithDiscount.grandTotal))
                       setAmountPaid(value)
                     }}
                     className="w-full pl-8"
                     step="0.01"
-                    max={derived.totals.grandTotal}
+                    max={totalsWithDiscount.grandTotal}
                   />
                 </div>
                 <button
                   type="button"
-                  onClick={() => setAmountPaid(derived.totals.grandTotal)}
+                  onClick={() => setAmountPaid(totalsWithDiscount.grandTotal)}
                   className="text-xs text-brand-primary hover:underline mt-1"
                 >
                   Mark as fully paid
@@ -875,11 +971,11 @@ export default function CreateInvoice() {
               <div className="flex justify-between pt-2 border-t border-gray-200">
                 <span className="font-semibold text-gray-900">Outstanding:</span>
                 <span className={`text-lg font-semibold ${
-                  (derived.totals.grandTotal - (Number(amountPaid) || 0)) > 0 
+                  (totalsWithDiscount.grandTotal - (Number(amountPaid) || 0)) > 0 
                     ? 'text-red-600' 
                     : 'text-green-600'
                 }`}>
-                  {formatCurrency(Math.max(0, derived.totals.grandTotal - (Number(amountPaid) || 0)))}
+                  {formatCurrency(Math.max(0, totalsWithDiscount.grandTotal - (Number(amountPaid) || 0)))}
                 </span>
               </div>
             </div>

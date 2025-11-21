@@ -1,8 +1,9 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { nanoid } from 'nanoid'
 import { ref, onValue, set, update, remove, off } from 'firebase/database'
 // Mock data removed - using empty initial state
-import { ensureFirebase, getFirebaseDatabase, isFirebaseConfigured } from '../lib/firebase'
+import { ensureFirebase, isFirebaseConfigured } from '../lib/firebase'
 import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData, clearLocalData, clearPendingInvoices } from '../lib/storage'
 import { calculateInvoiceTotals, makeInvoiceNo } from '../lib/taxUtils'
 
@@ -26,8 +27,60 @@ const defaultState = {
     companyState: '',
     invoicePrefix: 'INV',
     invoiceStyle: 'style1',
+    enableLoginGate: true,
+    enablePurchases: true,
+    stockUpdateMode: 'sent',
   },
   activity: [],
+}
+
+const aggregateItemQuantities = (items = []) => {
+  const byId = new Map()
+  const byName = new Map()
+  items.forEach((item) => {
+    const qty = Number(item?.qty) || 0
+    if (!qty) return
+    if (item.productId) {
+      byId.set(item.productId, (byId.get(item.productId) || 0) + qty)
+    }
+    const nameKey = (item.productName || item.description || '').trim().toLowerCase()
+    if (nameKey) {
+      byName.set(nameKey, (byName.get(nameKey) || 0) + qty)
+    }
+  })
+  return { byId, byName }
+}
+
+const adjustProductsFromItems = (products, items, direction = -1) => {
+  if (!products?.length || !items?.length) return products
+  const { byId, byName } = aggregateItemQuantities(items)
+  if (!byId.size && !byName.size) return products
+  let changed = false
+  const next = products.map((prod) => {
+    let delta = 0
+    if (prod.id && byId.has(prod.id)) {
+      delta += direction * byId.get(prod.id)
+    } else {
+      const nameKey = (prod.name || '').toLowerCase()
+      if (nameKey && byName.has(nameKey)) {
+        delta += direction * byName.get(nameKey)
+      }
+    }
+    if (!delta) return prod
+    changed = true
+    const currentStock = Number(prod.stock) || 0
+    const nextStock = Math.max(0, currentStock + delta)
+    if (nextStock === currentStock) return prod
+    return { ...prod, stock: nextStock }
+  })
+  return changed ? next : products
+}
+
+const shouldAutoAdjustInventory = (mode, status) => {
+  const normalizedMode = (mode || 'sent').toLowerCase()
+  if (normalizedMode === 'manual') return false
+  if (normalizedMode === 'paid') return status === 'paid'
+  return ['sent', 'paid'].includes(status)
 }
 
 const resolveDb = () => {
@@ -37,61 +90,12 @@ const resolveDb = () => {
 }
 
 export const DataProvider = ({ children }) => {
-  // Check if data contains sample/mock data IDs
-  const isSampleData = (data) => {
-    if (!data) return false
-    
-    // Check for known sample data patterns
-    const sampleCustomerNames = ['Arijit Saha', 'Neha Enterprises', 'Assam Electric Garage', 'Odisha Green Mobility', 'Maya E-Rides']
-    const sampleProductNames = ['48V 120Ah Lithium Battery', 'E-Rickshaw Controller 60A', 'Brushless Hub Motor 1000W']
-    const sampleIds = ['cust-001', 'cust-002', 'cust-003', 'cust-004', 'cust-005', 'prod-001', 'prod-002', 'prod-003', 'inv-']
-    
-    const hasSampleCustomers = data.customers?.some(c => 
-      sampleIds.some(id => c.id?.startsWith(id)) || 
-      sampleCustomerNames.includes(c.name)
-    )
-    const hasSampleProducts = data.products?.some(p => 
-      sampleIds.some(id => p.id?.startsWith(id)) || 
-      sampleProductNames.some(name => p.name?.includes(name))
-    )
-    const hasSampleInvoices = data.invoices?.some(i => 
-      sampleIds.some(id => i.id?.startsWith(id) || i.invoiceNo?.startsWith('INV-2024')) ||
-      sampleCustomerNames.some(name => i.customerName?.includes(name))
-    )
-    
-    return hasSampleCustomers || hasSampleProducts || hasSampleInvoices
-  }
-
   // Load from localStorage if Firebase is not configured
   const loadInitialData = () => {
     if (typeof window === 'undefined') return defaultState
     if (isFirebaseConfigured()) return defaultState
     
     const localData = loadLocalData()
-    
-    // Clear sample data if detected
-    if (localData && isSampleData(localData)) {
-      console.log('Sample data detected in localStorage. Clearing...')
-      clearLocalData()
-      clearPendingInvoices() // Also clear pending invoices queue
-      return defaultState
-    }
-    
-    // Check and clear pending invoices if they contain sample data
-    const pending = loadPendingInvoices()
-    if (pending.length > 0) {
-      const hasSamplePending = pending.some(inv => {
-        const sampleNames = ['Arijit Saha', 'Neha Enterprises', 'Assam Electric Garage', 'Odisha Green Mobility', 'Maya E-Rides']
-        return sampleNames.some(name => inv.customerName?.includes(name)) || 
-               inv.invoiceNo?.startsWith('INV-2024') ||
-               inv.id?.startsWith('inv-')
-      })
-      if (hasSamplePending) {
-        console.log('Sample data detected in pending invoices. Clearing...')
-        clearPendingInvoices()
-      }
-    }
-    
     if (localData) {
       return {
         invoices: localData.invoices || [],
@@ -201,13 +205,7 @@ export const DataProvider = ({ children }) => {
             const dataToCheck = { 
               [path === 'invoices' ? 'invoices' : path === 'customers' ? 'customers' : path === 'products' ? 'products' : 'purchases']: dataArray 
             }
-            if (isSampleData(dataToCheck)) {
-              console.log(`Sample data detected in Firebase ${path}. Clearing...`)
-              set(ref(db, path), {}) // Clear Firebase data
-              setter([])
-            } else {
-              setter(dataArray)
-            }
+            setter(dataArray)
           } else {
             setter(fallback)
           }
@@ -364,12 +362,6 @@ export const DataProvider = ({ children }) => {
     }
   }, [firebaseReady, online, db, invoices, customers, products, purchases, settings, meta])
 
-  const writeInvoices = async (items) => {
-    setInvoices(items)
-    if (!firebaseReady) return
-    const payload = items.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})
-    await set(ref(db, 'invoices'), payload)
-  }
 
   const enqueueInvoice = (invoice) => {
     setPendingInvoices((prev) => {
@@ -439,16 +431,17 @@ export const DataProvider = ({ children }) => {
       }
     }
 
-    // Only sync if we have data and just came back online
-    if (invoices.length > 0 || customers.length > 0 || products.length > 0) {
+    if (invoices.length > 0 || customers.length > 0 || products.length > 0 || purchases.length > 0) {
       const timer = setTimeout(syncAllData, 2000)
       return () => clearTimeout(timer)
     }
-  }, [online, firebaseReady, db])
+  }, [online, firebaseReady, syncing, db, invoices, customers, products, purchases, settings, meta, activity])
 
   const upsertInvoice = useCallback(async (form, status = 'draft') => {
     const seq = (meta?.invoiceSequence || 0) + 1
     const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, new Date(form.date), settings.invoicePrefix)
+    const existingInvoice = form.id ? invoices.find((inv) => inv.id === form.id) : null
+    let nextProducts = products
     
     // Extract customer data properly
     const customerState = form.customer?.state || settings.companyState
@@ -467,6 +460,30 @@ export const DataProvider = ({ children }) => {
       settings.companyState,
     )
 
+    const discountRaw = Number(form.discountAmount) || 0
+    const discountAmount = Math.max(0, Math.min(discountRaw, totals.grandTotal))
+    const totalsWithDiscount = {
+      ...totals,
+      discount: +discountAmount.toFixed(2),
+      grandTotal: +Math.max(0, totals.grandTotal - discountAmount).toFixed(2),
+    }
+
+    let inventoryAdjusted = existingInvoice?.inventoryAdjusted || false
+    if (existingInvoice?.inventoryAdjusted && existingInvoice.items?.length) {
+      nextProducts = adjustProductsFromItems(nextProducts, existingInvoice.items, 1)
+      inventoryAdjusted = false
+    }
+
+    const shouldAdjustNow = shouldAutoAdjustInventory(settings.stockUpdateMode, status)
+    if (shouldAdjustNow) {
+      nextProducts = adjustProductsFromItems(nextProducts, rows, -1)
+      inventoryAdjusted = true
+    }
+
+    if (nextProducts !== products) {
+      setProducts(nextProducts)
+    }
+
     const invoice = {
       id: form.id || nanoid(),
       invoiceNo,
@@ -484,13 +501,15 @@ export const DataProvider = ({ children }) => {
       place_of_supply: customerState,
       state: customerState,
       items: rows,
-      totals,
+      totals: totalsWithDiscount,
       status,
       notes: form.notes || '',
       reverseCharge: form.reverseCharge || false,
       amountPaid: form.amountPaid || 0,
+      discountAmount: totalsWithDiscount.discount || 0,
       synced: firebaseReady,
       createdAt: form.createdAt || Date.now(),
+      inventoryAdjusted,
     }
 
     setInvoices((prev) => {
@@ -500,72 +519,83 @@ export const DataProvider = ({ children }) => {
 
     pushActivity(`${invoice.invoiceNo} saved as ${status}`)
 
-    if (settings.stockUpdateMode === 'sent' && ['sent', 'paid'].includes(status)) {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          const line = rows.find((row) => row.productId === prod.id || row.description === prod.name)
-          if (!line) return prod
-          return { ...prod, stock: Math.max(prod.stock - line.qty, 0) }
-        }),
-      )
-    }
-
-    if (form.id) {
-      // existing invoice, do not bump sequence
-    } else {
+    let metaSnapshot = meta
+    if (!form.id) {
       const nextMeta = { ...meta, invoiceSequence: seq }
+      metaSnapshot = nextMeta
       persistMeta(nextMeta)
     }
 
+    const invoicesForPersistence = [invoice, ...invoices.filter((inv) => inv.id !== invoice.id)]
+
     // Save to localStorage immediately
     saveLocalData({
-      invoices: [invoice, ...invoices.filter((inv) => inv.id !== invoice.id)],
+      invoices: invoicesForPersistence,
       customers,
-      products,
+      products: nextProducts,
       purchases,
       settings,
-      meta,
+      meta: metaSnapshot,
       activity,
     })
 
     // Sync to Firebase if online
     if (firebaseReady && online) {
-    try {
-      await set(ref(db, `invoices/${invoice.id}`), invoice)
-    } catch (error) {
-      enqueueInvoice(invoice)
-      console.warn('Invoice saved locally; sync pending', error)
+      try {
+        await set(ref(db, `invoices/${invoice.id}`), invoice)
+      } catch (error) {
+        enqueueInvoice(invoice)
+        console.warn('Invoice saved locally; sync pending', error)
       }
     } else {
       enqueueInvoice(invoice)
     }
     return invoice
-  }, [meta, settings, firebaseReady, online, db])
+  }, [meta, settings, firebaseReady, online, db, invoices, customers, products, purchases, activity])
 
   const markInvoiceStatus = useCallback(async (invoiceId, status) => {
-    setInvoices((prev) => {
-      const updated = prev.map((inv) => {
-        if (inv.id === invoiceId) {
-          // When marking as paid, set amountPaid to full amount
-          const updates = { status }
-          if (status === 'paid') {
-            updates.amountPaid = inv.totals?.grandTotal || 0
-          }
-          return { ...inv, ...updates }
-        }
-        return inv
-      })
-      // Save to localStorage immediately
-      saveLocalData({
-        invoices: updated,
-        customers,
-        products,
-        purchases,
-        settings,
-        meta,
-        activity,
-      })
-      return updated
+    const existing = invoices.find((inv) => inv.id === invoiceId)
+    if (!existing) return
+
+    let nextProducts = products
+    let nextInventoryAdjusted = existing.inventoryAdjusted || false
+    const requiresInventory = shouldAutoAdjustInventory(settings.stockUpdateMode, status)
+
+    if (nextInventoryAdjusted && !requiresInventory) {
+      nextProducts = adjustProductsFromItems(nextProducts, existing.items, 1)
+      nextInventoryAdjusted = false
+    } else if (!nextInventoryAdjusted && requiresInventory) {
+      nextProducts = adjustProductsFromItems(nextProducts, existing.items, -1)
+      nextInventoryAdjusted = true
+    }
+
+    if (nextProducts !== products) {
+      setProducts(nextProducts)
+    }
+
+    const amountPaid = status === 'paid' ? (existing.totals?.grandTotal || 0) : existing.amountPaid || 0
+
+    const updatedInvoices = invoices.map((inv) => {
+      if (inv.id !== invoiceId) return inv
+      return {
+        ...inv,
+        status,
+        amountPaid,
+        inventoryAdjusted: nextInventoryAdjusted,
+      }
+    })
+
+    setInvoices(updatedInvoices)
+
+    // Save to localStorage immediately
+    saveLocalData({
+      invoices: updatedInvoices,
+      customers,
+      products: nextProducts,
+      purchases,
+      settings,
+      meta,
+      activity,
     })
     
     pushActivity(`${invoiceId} marked ${status}`)
@@ -573,12 +603,11 @@ export const DataProvider = ({ children }) => {
     // Sync to Firebase if online
     if (firebaseReady && online) {
       try {
-    const invoice = invoices.find((inv) => inv.id === invoiceId)
-    const updateData = { status }
-    if (status === 'paid' && invoice) {
-      updateData.amountPaid = invoice.totals?.grandTotal || 0
-    }
-    await update(ref(db, `invoices/${invoiceId}`), updateData)
+        await update(ref(db, `invoices/${invoiceId}`), {
+          status,
+          amountPaid,
+          inventoryAdjusted: nextInventoryAdjusted,
+        })
       } catch (error) {
         console.warn('Failed to update invoice status in Firebase, saved locally:', error)
       }
@@ -586,13 +615,22 @@ export const DataProvider = ({ children }) => {
   }, [firebaseReady, online, db, invoices, customers, products, purchases, settings, meta, activity])
 
   const deleteInvoice = useCallback(async (invoiceId) => {
+    const targetInvoice = invoices.find((inv) => inv.id === invoiceId)
+    let nextProducts = products
+    if (targetInvoice?.inventoryAdjusted && targetInvoice.items?.length) {
+      nextProducts = adjustProductsFromItems(nextProducts, targetInvoice.items, 1)
+      if (nextProducts !== products) {
+        setProducts(nextProducts)
+      }
+    }
+
     setInvoices((prev) => {
       const updated = prev.filter((inv) => inv.id !== invoiceId)
       // Save to localStorage immediately
       saveLocalData({
         invoices: updated,
         customers,
-        products,
+        products: nextProducts,
         purchases,
         settings,
         meta,
@@ -606,12 +644,12 @@ export const DataProvider = ({ children }) => {
     // Sync to Firebase if online
     if (firebaseReady && online) {
       try {
-    await remove(ref(db, `invoices/${invoiceId}`))
+        await remove(ref(db, `invoices/${invoiceId}`))
       } catch (error) {
         console.warn('Failed to delete invoice from Firebase, saved locally:', error)
       }
     }
-  }, [firebaseReady, online, db, customers, products, purchases, settings, meta, activity])
+  }, [firebaseReady, online, db, invoices, customers, products, purchases, settings, meta, activity])
 
   const upsertCustomer = useCallback(async (customer) => {
     const next = { 

@@ -1,4 +1,5 @@
-const CACHE_NAME = 'bph-billing-v1'
+const CACHE_VERSION = 'v2'
+const CACHE_NAME = `bph-billing-${CACHE_VERSION}`
 const RUNTIME_CACHE = 'bph-billing-runtime'
 
 // Assets to cache on install
@@ -6,7 +7,8 @@ const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/logo.svg',
+  '/logo.png',
+  '/icon-192.png',
   '/favicon.svg'
 ]
 

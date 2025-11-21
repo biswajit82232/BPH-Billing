@@ -53,46 +53,48 @@ export default function WhatsAppShare({ invoice, className = '', showHint = true
         type: 'application/pdf',
       })
 
-      const message = `Hi ${invoice.customerName},\n\nInvoice ${invoice.invoiceNo}\nAmount: ₹${invoice.totals.grandTotal}\n\nThank you for your business!\n- ${BRAND.name}`
+      const firstItem = invoice.items?.[0]
+      const baseItemName = firstItem?.name || firstItem?.description || 'your order'
+      const additionalCount = invoice.items?.length > 1 ? ` +${invoice.items.length - 1} more` : ''
+      const itemLine = `Item: ${baseItemName}${additionalCount}`
+
+      const message =
+        `Hi ${invoice.customerName},\n\n` +
+        `Invoice ${invoice.invoiceNo}\n` +
+        `Amount: ₹${invoice.totals.grandTotal}\n` +
+        `${itemLine}\n\n` +
+        `Thank you for your business!\n- ${BRAND.name}`
 
       // Format phone number for WhatsApp
       const rawPhone = invoice.phone || ''
       const formattedPhone = formatPhoneForWhatsApp(rawPhone)
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        // Android Chrome - direct share with file
-        await navigator.share({
-          files: [file],
-          title: invoice.invoiceNo,
-          text: message,
-        })
+      // Always download the PDF so it can be attached manually if needed
+      const url = URL.createObjectURL(blob)
+      const downloadLink = document.createElement('a')
+      downloadLink.href = url
+      downloadLink.download = file.name
+      downloadLink.click()
+      
+      const fallbackText = encodeURIComponent(message)
+      
+      // Open WhatsApp chat with customer number
+      if (formattedPhone && formattedPhone.length >= 10) {
+        const whatsappUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${fallbackText}`
+        window.open(whatsappUrl, '_blank')
+        // Also try wa.me as secondary in case api URL is blocked
+        setTimeout(() => window.open(`https://wa.me/${formattedPhone}?text=${fallbackText}`, '_blank'), 500)
+        toast.success(`WhatsApp opened for ${invoice.customerName}`)
       } else {
-        // Desktop/iOS - download first, then open WhatsApp
-        const url = URL.createObjectURL(blob)
-        const downloadLink = document.createElement('a')
-        downloadLink.href = url
-        downloadLink.download = file.name
-        downloadLink.click()
-        
-        const fallbackText = encodeURIComponent(
-          `${message}\n\n📎 Please attach the downloaded PDF file.`,
+        const displayPhone = invoice.phone || 'Not provided'
+        toast.error(`Invalid phone number: ${displayPhone}`)
+        alert(
+          `❌ Cannot open WhatsApp\n\n` +
+          `Customer: ${invoice.customerName}\n` +
+          `Phone: ${displayPhone}\n\n` +
+          `Please add a valid 10-digit phone number.\n` +
+          `Example: 9635505436`
         )
-        
-        // Check if we have a valid phone number
-        if (formattedPhone && formattedPhone.length >= 10) {
-          window.open(`https://wa.me/${formattedPhone}?text=${fallbackText}`, '_blank')
-          toast.success(`WhatsApp opened for ${invoice.customerName}`)
-        } else {
-          const displayPhone = invoice.phone || 'Not provided'
-          toast.error(`Invalid phone number: ${displayPhone}`)
-          alert(
-            `❌ Cannot open WhatsApp\n\n` +
-            `Customer: ${invoice.customerName}\n` +
-            `Phone: ${displayPhone}\n\n` +
-            `Please add a valid 10-digit phone number.\n` +
-            `Example: 9635505436`
-          )
-        }
       }
     } catch (error) {
       console.error('Unable to share on WhatsApp', error)
@@ -125,7 +127,7 @@ export default function WhatsAppShare({ invoice, className = '', showHint = true
             </p>
           )}
           <p className="text-xs text-gray-500 max-w-sm">
-            Android: PDF attaches automatically • iOS/Desktop: Download then attach
+            PDF downloads automatically — attach it from WhatsApp before sending
           </p>
         </div>
       )}

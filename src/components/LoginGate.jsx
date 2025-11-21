@@ -57,9 +57,9 @@ export default function LoginGate({ children }) {
                 }}
                 onError={(e) => {
                   // Fallback to the "B" letter if logo.png fails to load
-                  e.target.style.display = 'none'
-                  const parent = e.target.parentElement
-                  parent.innerHTML = '<div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-primary to-blue-600 rounded-2xl shadow-2xl"><span class="text-white font-bold text-3xl">B</span></div>'
+                    e.target.style.display = 'none'
+                    const parent = e.target.parentElement
+                    parent.innerHTML = '<div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-primary to-blue-600 rounded-2xl shadow-2xl"><span class="text-white font-bold text-3xl">B</span></div>'
                 }}
               />
               {/* Material design shadow layers */}

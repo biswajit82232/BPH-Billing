@@ -31,11 +31,11 @@ export default function PWAInstallPrompt() {
     const dismissed = localStorage.getItem('pwa-prompt-dismissed')
     if (dismissed) {
       const daysSinceDismissed = (Date.now() - parseInt(dismissed)) / (1000 * 60 * 60 * 24)
-      if (daysSinceDismissed < 7) {
-        setShowPrompt(false)
+      if (daysSinceDismissed < 7 && showPrompt) {
+        setTimeout(() => setShowPrompt(false), 0)
       }
     }
-  }, [])
+  }, [showPrompt])
 
   if (!showPrompt || isInstalled) return null
 

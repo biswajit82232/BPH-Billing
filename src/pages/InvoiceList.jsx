@@ -9,9 +9,15 @@ import PageHeader from '../components/PageHeader'
 import EmptyState, { icons } from '../components/EmptyState'
 import { useToast } from '../components/ToastContainer'
 import { formatCurrency } from '../lib/taxUtils'
-import { format, subDays, startOfWeek, startOfMonth, parseISO } from 'date-fns'
+import { format, subDays, startOfWeek, startOfMonth } from 'date-fns'
 
 const ITEMS_PER_PAGE = 50
+
+// SortIcon component moved outside to avoid creating during render
+const SortIcon = ({ field, sortField, sortOrder }) => {
+  if (sortField !== field) return <span className="text-gray-400 ml-1">↕</span>
+  return <span className="text-brand-primary ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+}
 
 export default function InvoiceList() {
   const { invoices, markInvoiceStatus, deleteInvoice } = useData()
@@ -25,10 +31,10 @@ export default function InvoiceList() {
   // Read customer parameter from URL and set search
   useEffect(() => {
     const customerParam = searchParams.get('customerName')
-    if (customerParam) {
-      setSearch(customerParam)
+    if (customerParam && customerParam !== search) {
+      setTimeout(() => setSearch(customerParam), 0)
     }
-  }, [searchParams])
+  }, [searchParams, search])
   const [status, setStatus] = useState('all')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -48,8 +54,10 @@ export default function InvoiceList() {
 
   // Reset to page 1 when filters change
   useEffect(() => {
-    setCurrentPage(1)
-  }, [debouncedSearch, status, from, to])
+    if (currentPage !== 1) {
+      setTimeout(() => setCurrentPage(1), 0)
+    }
+  }, [debouncedSearch, status, from, to, currentPage])
 
   // Keyboard shortcut for search
   useEffect(() => {
@@ -189,11 +197,6 @@ export default function InvoiceList() {
     
     return { filtered, paginated, totalPages, totalAmount }
   }, [invoices, debouncedSearch, status, from, to, currentPage, sortField, sortOrder])
-
-  const SortIcon = ({ field }) => {
-    if (sortField !== field) return <span className="text-gray-400 ml-1">↕</span>
-    return <span className="text-brand-primary ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-  }
 
   return (
     <div className="space-y-3 sm:space-y-6 w-full">
@@ -349,19 +352,19 @@ export default function InvoiceList() {
                     />
                   </th>
                   <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('invoiceNo')}>
-                    Invoice <SortIcon field="invoiceNo" />
+                    Invoice <SortIcon field="invoiceNo" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('customer')}>
-                    Customer <SortIcon field="customer" />
+                    Customer <SortIcon field="customer" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('date')}>
-                    Date <SortIcon field="date" />
+                    Date <SortIcon field="date" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('dueDate')}>
-                    Due Date <SortIcon field="dueDate" />
+                    Due Date <SortIcon field="dueDate" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="text-right cursor-pointer hover:bg-gray-100" onClick={() => handleSort('total')}>
-                    Total <SortIcon field="total" />
+                    Total <SortIcon field="total" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="text-right cursor-pointer hover:bg-gray-100">
                     Outstanding

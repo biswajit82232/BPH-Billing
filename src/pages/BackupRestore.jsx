@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useData } from '../context/DataContext'
 import { useAuth, ALL_PAGES } from '../context/AuthContext'
 import { useToast } from '../components/ToastContainer'
@@ -8,8 +8,8 @@ import { clearLocalData, clearPendingInvoices } from '../lib/storage'
 export default function BackupRestore() {
   const fileRef = useRef(null)
   const toast = useToast()
-  const { backupData, restoreBackup, settings, updateSettings, pendingInvoices, syncPendingInvoices, syncing, online, firebaseReady } = useData()
-  const { users, addUser, updateUser, deleteUser, getCurrentUserData } = useAuth()
+  const { backupData, restoreBackup, settings, updateSettings, pendingInvoices, syncPendingInvoices } = useData()
+  const { users, addUser, updateUser, deleteUser, replaceUsers } = useAuth()
   const [localSettings, setLocalSettings] = useState(settings)
   const [showUserManagement, setShowUserManagement] = useState(false)
   const [userForm, setUserForm] = useState({
@@ -22,9 +22,16 @@ export default function BackupRestore() {
   })
   const [editingUserId, setEditingUserId] = useState(null)
 
+  useEffect(() => {
+    setLocalSettings(settings)
+  }, [settings])
+
   const exportJson = () => {
     try {
-    const data = backupData()
+      const data = {
+        ...backupData(),
+        users,
+      }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -42,9 +49,13 @@ export default function BackupRestore() {
     if (!file) return
     
     try {
-    const text = await file.text()
+      const text = await file.text()
       const data = JSON.parse(text)
-      await restoreBackup(data)
+      const { users: importedUsers, ...payload } = data || {}
+      await restoreBackup(payload)
+      if (Array.isArray(importedUsers)) {
+        await replaceUsers(importedUsers)
+      }
       toast.success('Backup restored successfully!')
       event.target.value = ''
     } catch (error) {
@@ -123,7 +134,7 @@ export default function BackupRestore() {
                   try {
                     await syncPendingInvoices()
                     toast.success('Pending invoices synced!')
-                  } catch (error) {
+                  } catch {
                     toast.error('Failed to sync. Check connection.')
                   }
                 }}

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { loadUsers, saveUsers, clearSessionUser, readSessionUser, writeSessionUser } from '../lib/storage'
 import { ref, onValue, set, off } from 'firebase/database'
@@ -48,18 +49,22 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!isFirebaseConfigured()) {
       const loadedUsers = loadUsers()
-      setUsers(loadedUsers)
+      if (JSON.stringify(loadedUsers) !== JSON.stringify(users)) {
+        setTimeout(() => setUsers(loadedUsers), 0)
+      }
       return
     }
 
     const { db } = ensureFirebase()
     if (!db) {
       const loadedUsers = loadUsers()
-      setUsers(loadedUsers)
+      if (JSON.stringify(loadedUsers) !== JSON.stringify(users)) {
+        setTimeout(() => setUsers(loadedUsers), 0)
+      }
       return
     }
 
-    setLoading(true)
+    setTimeout(() => setLoading(true), 0)
     const usersRef = ref(db, 'users')
     const listener = onValue(
       usersRef,
@@ -90,11 +95,11 @@ export const AuthProvider = ({ children }) => {
       }
     )
 
-    return () => {
+      return () => {
       off(usersRef)
       listener()
     }
-  }, [online])
+  }, [online, users])
 
   // Login function
   const login = useCallback((username, password) => {
@@ -260,6 +265,43 @@ export const AuthProvider = ({ children }) => {
     return { success: true }
   }, [users, currentUser, logout, online])
 
+  const replaceUsers = useCallback(async (nextUsers = []) => {
+    const timestamp = Date.now()
+    const mappedUsers = Array.isArray(nextUsers)
+      ? nextUsers.map((user, index) => ({
+          id: user.id || `user-${timestamp}-${index}`,
+          username: (user.username || '').trim(),
+          password: user.password,
+          name: user.name || user.username || 'User',
+          active: user.active !== undefined ? user.active : true,
+          permissions: Array.isArray(user.permissions) ? user.permissions : [],
+          createdAt: user.createdAt || new Date().toISOString(),
+          updatedAt: user.updatedAt || null,
+        }))
+      : []
+
+    const safeUsers = mappedUsers.filter((user) => user.username)
+
+    setUsers(safeUsers)
+    saveUsers(safeUsers)
+
+    if (isFirebaseConfigured() && online) {
+      try {
+        const { db } = ensureFirebase()
+        if (db) {
+          const usersObj = safeUsers.reduce((acc, user) => ({ ...acc, [user.id]: user }), {})
+          await set(ref(db, 'users'), usersObj)
+        }
+      } catch (error) {
+        console.warn('Failed to replace users in Firebase, saved locally:', error)
+      }
+    }
+
+    if (currentUser && !safeUsers.some((user) => user.username === currentUser)) {
+      logout()
+    }
+  }, [online, currentUser, logout])
+
   // Get current user data
   const getCurrentUserData = useCallback(() => {
     if (!currentUser) return null
@@ -275,6 +317,7 @@ export const AuthProvider = ({ children }) => {
     addUser,
     updateUser,
     deleteUser,
+    replaceUsers,
     getCurrentUserData,
     loading,
   }

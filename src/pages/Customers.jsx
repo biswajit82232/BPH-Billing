@@ -5,9 +5,9 @@ import { useToast } from '../components/ToastContainer'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import PageHeader from '../components/PageHeader'
 import EmptyState, { icons } from '../components/EmptyState'
-import ConfirmModal from '../components/ConfirmModal'
 import { formatCurrency } from '../lib/taxUtils'
 import { calculateReceivablesByCustomer, calculateTotalReceivables } from '../utils/calculateReceivables'
+import ConfirmModal from '../components/ConfirmModal'
 
 const emptyCustomer = { id: '', name: '', email: '', phone: '', state: '', gstin: '', address: '', aadhaar: '', dob: '', notes: '' }
 
@@ -742,22 +742,29 @@ export default function Customers() {
           </div>
         )}
       </div>
-      {/* Confirmation Modal */}
+
       <ConfirmModal
         isOpen={deleteModal.isOpen}
+        title="Delete Customer?"
+        message={
+          deleteModal.customer
+            ? `Are you sure you want to delete "${deleteModal.customer.name}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this customer?'
+        }
+        confirmText="Delete"
         onClose={() => setDeleteModal({ isOpen: false, customer: null })}
         onConfirm={async () => {
-          if (deleteModal.customer) {
+          if (!deleteModal.customer) return
+          try {
             await deleteCustomer(deleteModal.customer.id)
             toast.success('Customer deleted')
+          } catch (error) {
+            console.error('Error deleting customer:', error)
+            toast.error('Failed to delete customer. Please try again.')
+          } finally {
             setDeleteModal({ isOpen: false, customer: null })
           }
         }}
-        title="Delete Customer?"
-        message={`Are you sure you want to delete customer "${deleteModal.customer?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        type="danger"
       />
     </div>
   )

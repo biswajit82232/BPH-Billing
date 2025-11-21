@@ -61,6 +61,10 @@ function InvoicePreview({ invoice }) {
   }
   
   const currentStyle = styleClasses[invoiceStyle] || styleClasses.style1
+  const discountAmount = Math.max(0, invoice.discountAmount ?? invoice.totals?.discount ?? 0)
+  const grandTotal = invoice.totals?.grandTotal || 0
+  const amountPaid = Number(invoice.amountPaid) || 0
+  const outstanding = Math.max(0, grandTotal - amountPaid)
 
   return (
     <div
@@ -158,13 +162,20 @@ function InvoicePreview({ invoice }) {
           <tbody>
             {invoice.items.map((item, idx) => {
               const productName = item.productName || getProductName(item.productId)
+              const descriptionText = item.description || ''
               return (
                 <tr key={idx} className="border-b border-gray-100" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'auto' }}>
                   <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-gray-600 font-medium">
                     {productName || 'Manual Entry'}
-                    {item.description && <span className="sm:hidden block text-[9px] text-gray-500 mt-0.5">{item.description.substring(0, 30)}...</span>}
+                    {descriptionText && (
+                      <span className="sm:hidden block text-[9px] text-gray-500 mt-0.5 whitespace-pre-line break-words">
+                        {descriptionText}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-gray-900 hidden sm:table-cell">{item.description}</td>
+                  <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-gray-900 hidden sm:table-cell whitespace-pre-line break-words">
+                    {descriptionText || '-'}
+                  </td>
                   <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-gray-600 hidden md:table-cell">{item.hsn || '-'}</td>
                   <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-center text-gray-900">{item.qty}</td>
                   <td className="px-1 sm:px-2 md:px-4 py-1 sm:py-1.5 md:py-2 text-[10px] sm:text-xs text-right text-gray-900">{formatCurrency(item.rate)}</td>
@@ -204,20 +215,26 @@ function InvoicePreview({ invoice }) {
               <span className="text-gray-900 font-medium">{formatCurrency(invoice.totals.igst)}</span>
             </div>
           )}
+          {discountAmount > 0 && (
+            <div className="flex justify-between text-sm py-1 text-rose-600">
+              <span className="text-gray-600">Discount</span>
+              <span className="font-semibold">-{formatCurrency(discountAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between pt-3 border-t-2 border-gray-300 mt-2">
             <span className="text-base font-semibold text-gray-900">Total</span>
-            <span className="text-xl font-semibold text-gray-900">{formatCurrency(invoice.totals.grandTotal)}</span>
+            <span className="text-xl font-semibold text-gray-900">{formatCurrency(grandTotal)}</span>
           </div>
-          {invoice.amountPaid > 0 && (
+          {amountPaid > 0 && (
             <>
               <div className="flex justify-between text-sm py-1 text-green-700">
                 <span className="font-medium">Amount Paid</span>
-                <span className="font-medium">{formatCurrency(invoice.amountPaid)}</span>
+                <span className="font-medium">{formatCurrency(amountPaid)}</span>
               </div>
-              {(invoice.totals.grandTotal - invoice.amountPaid) > 0 && (
+              {outstanding > 0 && (
                 <div className="flex justify-between pt-2 border-t border-gray-200">
                   <span className="text-base font-semibold text-red-700">Outstanding</span>
-                  <span className="text-xl font-semibold text-red-700">{formatCurrency(invoice.totals.grandTotal - invoice.amountPaid)}</span>
+                  <span className="text-xl font-semibold text-red-700">{formatCurrency(outstanding)}</span>
                 </div>
               )}
             </>

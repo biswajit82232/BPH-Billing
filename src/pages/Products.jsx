@@ -4,8 +4,8 @@ import { useToast } from '../components/ToastContainer'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import PageHeader from '../components/PageHeader'
 import EmptyState, { icons } from '../components/EmptyState'
-import ConfirmModal from '../components/ConfirmModal'
 import { formatCurrency } from '../lib/taxUtils'
+import ConfirmModal from '../components/ConfirmModal'
 
 const emptyProduct = {
   id: '',
@@ -27,7 +27,6 @@ export default function Products() {
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [showPurchases, setShowPurchases] = useState(settings.enablePurchases)
-  const [deleteModal, setDeleteModal] = useState({ isOpen: false, product: null })
   const [purchaseRow, setPurchaseRow] = useState({ 
     productId: '', 
     productName: '', // For new product
@@ -48,6 +47,7 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, product: null })
 
   // Debounce search input
   useEffect(() => {
@@ -827,7 +827,9 @@ export default function Products() {
                   </td>
                   <td className="action-buttons py-2" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => setDeleteModal({ isOpen: true, product })}
+                      onClick={async () => {
+                        setDeleteModal({ isOpen: true, product })
+                      }}
                       className="btn-danger !py-1.5 !text-xs"
                     >
                       Delete
@@ -910,7 +912,9 @@ export default function Products() {
             {/* Delete Button for Mobile */}
             <div className="mt-4 pt-3 border-t border-gray-200 flex justify-end" onClick={(e) => e.stopPropagation()}>
               <button
-                onClick={() => setDeleteModal({ isOpen: true, product })}
+                onClick={async () => {
+                  setDeleteModal({ isOpen: true, product })
+                }}
                 className="btn-danger !py-1.5 !px-2 !text-[10px]"
               >
                 Delete
@@ -938,22 +942,28 @@ export default function Products() {
         )}
       </div>
 
-      {/* Confirmation Modal */}
       <ConfirmModal
         isOpen={deleteModal.isOpen}
+        title="Delete Product?"
+        message={
+          deleteModal.product
+            ? `Are you sure you want to delete "${deleteModal.product.name}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this product?'
+        }
+        confirmText="Delete"
         onClose={() => setDeleteModal({ isOpen: false, product: null })}
         onConfirm={async () => {
-          if (deleteModal.product) {
+          if (!deleteModal.product) return
+          try {
             await deleteProduct(deleteModal.product.id)
             toast.success('Product deleted')
+          } catch (error) {
+            console.error('Error deleting product:', error)
+            toast.error('Failed to delete product. Please try again.')
+          } finally {
             setDeleteModal({ isOpen: false, product: null })
           }
         }}
-        title="Delete Product?"
-        message={`Are you sure you want to delete product "${deleteModal.product?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        type="danger"
       />
     </div>
   )

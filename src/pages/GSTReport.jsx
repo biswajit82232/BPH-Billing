@@ -22,7 +22,7 @@ const gstr1Header = [
 ]
 
 export default function GSTReport() {
-  const { invoices, purchases } = useData()
+  const { invoices, purchases, products } = useData()
   const [period, setPeriod] = useState(format(new Date(), 'yyyy-MM'))
   const summaryRef = useRef(null)
 

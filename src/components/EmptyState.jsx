@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 export default function EmptyState({ icon, title, message, actionLabel, onAction }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-4 text-center">

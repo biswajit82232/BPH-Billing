@@ -12,7 +12,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const monthKey = format(new Date(), 'yyyy-MM')
 
-  const { monthlyInvoices, totals, lowStock, allTimeReceivables } = useMemo(() => {
+  const { totals, lowStock, allTimeReceivables } = useMemo(() => {
     const monthly = invoices.filter((inv) => inv.date?.startsWith(monthKey))
     const totals = monthly.reduce(
       (acc, invoice) => {

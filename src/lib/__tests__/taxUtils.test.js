@@ -1,3 +1,4 @@
+/* eslint-env jest */
 import { calculateInvoiceTotals, makeInvoiceNo } from '../taxUtils'
 
 describe('makeInvoiceNo', () => {

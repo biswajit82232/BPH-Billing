@@ -96,8 +96,8 @@ export default function Layout({ children }) {
                 className="w-full h-full object-contain p-1"
                 onError={(e) => {
                   // Fallback to the "B" letter if logo.png fails to load
-                  e.target.style.display = 'none'
-                  e.target.parentElement.innerHTML = '<span class="text-brand-primary font-bold text-xl">B</span>'
+                    e.target.style.display = 'none'
+                    e.target.parentElement.innerHTML = '<span class="text-brand-primary font-bold text-xl">B</span>'
                 }}
               />
             </div>
