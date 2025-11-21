@@ -1,0 +1,26 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "invoices": {
+      "$invoiceId": {
+        ".validate": "newData.hasChildren(['invoiceNo','date','items','totals'])"
+      }
+    },
+    "customers": {
+      "$customerId": {
+        ".validate": "newData.hasChildren(['name'])"
+      }
+    },
+    "products": {
+      "$productId": {
+        ".validate": "newData.hasChildren(['name','unit_price'])"
+      }
+    },
+    "meta": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
+

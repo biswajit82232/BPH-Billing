@@ -1,0 +1,453 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f8f9fa;
+  color: #1f2937;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: -webkit-fill-available; /* iOS Safari fix */
+  background: #f7f8fa;
+  overflow-x: hidden;
+  /* Smooth scrolling like Zoho */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  letter-spacing: 0.01em;
+  padding-bottom: env(safe-area-inset-bottom); /* Safe area for mobile */
+}
+
+#root {
+  min-height: 100vh;
+  min-height: -webkit-fill-available; /* iOS Safari fix */
+  overflow-x: hidden;
+}
+
+/* Mobile bottom safe area */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+/* Ensure content is scrollable on mobile */
+@media (max-width: 768px) {
+  main {
+    padding-bottom: 2rem !important;
+  }
+  
+  /* Fix for mobile browsers with dynamic viewport */
+  html {
+    height: -webkit-fill-available;
+  }
+  
+  body {
+    height: -webkit-fill-available;
+  }
+}
+
+/* Smooth momentum scrolling for mobile */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+.glass-panel {
+  @apply bg-white rounded-lg border border-gray-200 shadow-md transition-all duration-200;
+}
+
+.glass-panel:hover {
+  @apply shadow-lg border-gray-300;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, #0072CE 0%, #005a9e 100%);
+  box-shadow: 0 2px 8px rgba(0, 114, 206, 0.15);
+}
+
+.btn-primary {
+  @apply bg-brand-primary text-white font-medium rounded-lg px-5 py-2.5 hover:bg-brand-dark hover:shadow-lg transition-all duration-150 active:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-md;
+}
+
+/* Mobile - compact buttons with rounded square edges */
+@media (max-width: 768px) {
+  .btn-primary {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    touch-action: manipulation;
+    min-height: 2rem;
+  }
+}
+
+/* Zoho-style tables */
+table {
+  @apply border-collapse w-full;
+}
+
+table thead {
+  @apply bg-gradient-to-r from-gray-50 to-gray-100;
+}
+
+table th {
+  @apply font-semibold text-gray-700 text-left text-xs uppercase tracking-wider px-6 py-4 border-b-2 border-gray-200;
+}
+
+table td {
+  @apply px-6 py-4 text-sm text-gray-900 border-b border-gray-100;
+}
+
+table tbody tr {
+  @apply transition-all duration-150;
+}
+
+table tbody tr:nth-child(even) {
+  @apply bg-gray-50/50;
+}
+
+table tbody tr:hover {
+  @apply bg-blue-50 shadow-sm;
+}
+
+table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+/* Smooth scrollbar - Zoho style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-50;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Mobile-friendly and compact */
+@media (max-width: 768px) {
+  /* Container constraints for landscape mode - prevent full width */
+  @media (orientation: landscape) {
+    .max-w-7xl {
+      max-width: 95%;
+    }
+    
+    main > div {
+      max-width: 95%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+  /* Hide scrollbar on mobile for cleaner look */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  /* Better scrolling on mobile */
+  * {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Compact inputs - prevent zoom on iOS while keeping small */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important; /* Prevents iOS zoom */
+    padding: 0.65rem 1rem !important;
+    border: 2px solid #d1d5db !important;
+  }
+  
+  /* Compact buttons - smaller with rounded square edges */
+  button:not(.btn-primary):not(.btn-secondary):not(.btn-danger):not(.btn-success) {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    min-height: 2rem;
+  }
+  
+  /* Compact cards and panels */
+  .glass-panel {
+    padding: 0.75rem;
+  }
+  
+  /* Compact table cells */
+  table th, table td {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Compact headings */
+  h1 {
+    font-size: 1.25rem;
+  }
+  
+  h2 {
+    font-size: 1.125rem;
+  }
+  
+  h3 {
+    font-size: 1rem;
+  }
+}
+
+/* Smooth scrolling containers */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Better table scrolling on mobile */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+}
+
+/* Zoho-style form inputs - catch all inputs */
+input,
+select,
+textarea {
+  @apply rounded-lg px-4 py-3 bg-white text-gray-900 placeholder-gray-400 text-sm transition-all duration-150;
+  border: 2px solid #d1d5db !important; /* Gray-300 border - clean and visible */
+  display: block !important;
+  width: 100% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Specific overrides for special input types */
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"] {
+  width: auto !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Ensure labels are visible */
+label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin-bottom: 0.25rem;
+}
+
+/* Mobile-friendly inputs */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    line-height: 1.5rem !important;
+    border: 2px solid #d1d5db !important;
+  }
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  @apply outline-none ring-2 ring-brand-primary/30;
+  border-color: #0072CE !important;
+  box-shadow: 0 0 0 3px rgba(0, 114, 206, 0.1) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: #9ca3af !important; /* Gray-400 on hover */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):disabled,
+select:disabled,
+textarea:disabled {
+  border-color: #9ca3af !important; /* Gray-400 for disabled */
+  background-color: #f3f4f6 !important; /* Gray-100 background */
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Button variants - Zoho style */
+.btn-secondary {
+  @apply bg-white text-brand-primary border-2 border-brand-primary font-medium rounded-lg px-5 py-2.5 hover:bg-brand-primary hover:text-white hover:shadow-lg transition-all duration-150 shadow-sm;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white font-medium rounded-lg px-5 py-2.5 hover:bg-red-700 hover:shadow-lg transition-all duration-150 shadow-md;
+}
+
+.btn-success {
+  @apply bg-green-600 text-white font-medium rounded-lg px-5 py-2.5 hover:bg-green-700 hover:shadow-lg transition-all duration-150 shadow-md;
+}
+
+/* Mobile - compact buttons with rounded square edges */
+@media (max-width: 768px) {
+  .btn-secondary,
+  .btn-danger,
+  .btn-success {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    touch-action: manipulation;
+    min-height: 2rem;
+  }
+}
+
+/* Toast animations */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Confirmation modal animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* PWA Install Prompt animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Pulse animation for notifications */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Shimmer animation for loading bar */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  .glass-panel {
+    box-shadow: none;
+    border: 1px solid #e5e7eb;
+  }
+  
+  @page {
+    margin: 1cm;
+  }
+}
+
+
