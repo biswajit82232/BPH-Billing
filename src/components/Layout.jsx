@@ -71,7 +71,7 @@ export default function Layout({ children }) {
   const canSync = firebaseReady && online && pendingInvoices.length > 0 && !syncing
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex bg-gray-50 overflow-hidden" style={{ height: '100dvh', minHeight: '100vh' }}>
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
