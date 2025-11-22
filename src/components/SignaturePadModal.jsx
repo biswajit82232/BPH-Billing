@@ -99,11 +99,9 @@ export default function SignaturePadModal({ isOpen, onClose, onSave, value, labe
         top: 0, 
         left: 0, 
         right: 0, 
-        bottom: 0,
-        height: '100vh',
-        height: '100dvh', // Dynamic viewport height for mobile
-        maxHeight: '100vh',
-        maxHeight: '100dvh',
+          bottom: 0,
+          height: '100dvh', // Dynamic viewport height for mobile
+          maxHeight: '100dvh',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
