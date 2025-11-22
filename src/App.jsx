@@ -18,6 +18,7 @@ const Products = lazy(() => import('./pages/Products'))
 const GSTReport = lazy(() => import('./pages/GSTReport'))
 const AgingReport = lazy(() => import('./pages/AgingReport'))
 const BackupRestore = lazy(() => import('./pages/BackupRestore'))
+const CustomerPortal = lazy(() => import('./pages/CustomerPortal'))
 
 function RoutedApp() {
   const { loading, loadingProgress, firebaseReady } = useData()
@@ -25,22 +26,78 @@ function RoutedApp() {
   return (
     <>
       {loading && firebaseReady && <LoadingState progress={loadingProgress} />}
-    <Layout>
       <Suspense fallback={!loading ? <LoadingState progress={50} /> : null}>
-      <Routes>
-        <Route path="/" element={<ProtectedRoute pageKey="dashboard"><Dashboard /></ProtectedRoute>} />
-        <Route path="/invoices" element={<ProtectedRoute pageKey="invoices"><InvoiceList /></ProtectedRoute>} />
-        <Route path="/invoices/new" element={<ProtectedRoute pageKey="invoices"><CreateInvoice /></ProtectedRoute>} />
-        <Route path="/invoices/:invoiceId" element={<ProtectedRoute pageKey="invoices"><CreateInvoice /></ProtectedRoute>} />
-        <Route path="/customers" element={<ProtectedRoute pageKey="customers"><Customers /></ProtectedRoute>} />
-        <Route path="/products" element={<ProtectedRoute pageKey="products"><Products /></ProtectedRoute>} />
-        <Route path="/gst-report" element={<ProtectedRoute pageKey="gst-report"><GSTReport /></ProtectedRoute>} />
-        <Route path="/aging-report" element={<ProtectedRoute pageKey="aging-report"><AgingReport /></ProtectedRoute>} />
-        <Route path="/backup" element={<ProtectedRoute pageKey="settings"><BackupRestore /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        <Routes>
+          {/* Public customer portal route - no layout or protection */}
+          <Route path="/portal" element={<CustomerPortal />} />
+          
+          {/* Protected admin routes */}
+          <Route path="/" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="dashboard"><Dashboard /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/invoices" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="invoices"><InvoiceList /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/invoices/new" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="invoices"><CreateInvoice /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/invoices/:invoiceId" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="invoices"><CreateInvoice /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/customers" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="customers"><Customers /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/products" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="products"><Products /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/gst-report" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="gst-report"><GSTReport /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/aging-report" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="aging-report"><AgingReport /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="/backup" element={
+            <LoginGate>
+              <Layout>
+                <ProtectedRoute pageKey="settings"><BackupRestore /></ProtectedRoute>
+              </Layout>
+            </LoginGate>
+          } />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Suspense>
-    </Layout>
     </>
   )
 }
@@ -52,9 +109,7 @@ export default function App() {
       <DataProvider>
         <AuthProvider>
         <ToastProvider>
-        <LoginGate>
           <RoutedApp />
-        </LoginGate>
         </ToastProvider>
         </AuthProvider>
       </DataProvider>

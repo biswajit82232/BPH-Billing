@@ -255,11 +255,24 @@ export default function Dashboard() {
           subtitle={`Paid ${formatCurrency(totals.paid)}`}
           highlight
         />
+      </section>
+
+      <section className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
         <StatsCard 
           label="Total Receivables" 
           value={formatCurrency(allTimeReceivables)}
           subtitle="Across all invoices"
         />
+        <div 
+          onClick={() => setShowProfitDetails(true)}
+          className="cursor-pointer"
+        >
+          <StatsCard 
+            label="Profit This Month" 
+            value={formatCurrency(profit)}
+            subtitle={profit >= 0 ? "Revenue - Cost" : "Loss"}
+          />
+        </div>
       </section>
 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
@@ -287,19 +300,6 @@ export default function Dashboard() {
           <Link className="btn-secondary text-center" to="/backup">
             Settings
           </Link>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-        <div 
-          onClick={() => setShowProfitDetails(true)}
-          className="cursor-pointer"
-        >
-          <StatsCard 
-            label="Profit This Month" 
-            value={formatCurrency(profit)}
-            subtitle={profit >= 0 ? "Revenue - Cost" : "Loss"}
-          />
         </div>
       </section>
 
