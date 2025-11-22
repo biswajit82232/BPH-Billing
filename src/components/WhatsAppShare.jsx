@@ -58,11 +58,17 @@ export default function WhatsAppShare({ invoice, className = '', showHint = true
       const additionalCount = invoice.items?.length > 1 ? ` +${invoice.items.length - 1} more` : ''
       const itemLine = `Item: ${baseItemName}${additionalCount}`
 
+      // Get portal URL (works for both dev and production)
+      const portalUrl = `${window.location.origin}/portal`
+      const reviewUrl = 'https://g.page/r/Cfc9X2_ohssSEBM/review'
+      
       const message =
-        `Hi ${invoice.customerName},\n\n` +
+        `Hi ${invoice.customerName},\n\n\n` +
         `Invoice ${invoice.invoiceNo}\n` +
         `Amount: ₹${invoice.totals.grandTotal}\n` +
         `${itemLine}\n\n` +
+        `View & download your invoices: ${portalUrl}\n\n` +
+        `Please leave us a review\n\n\n` +
         `Thank you for your business!\n- ${BRAND.name}`
 
       // Format phone number for WhatsApp
