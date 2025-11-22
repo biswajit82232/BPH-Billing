@@ -10,6 +10,7 @@ import InvoicePreview from '../components/InvoicePreview'
 import PageHeader from '../components/PageHeader'
 import SignaturePad from '../components/SignaturePad'
 import { calculateInvoiceTotals, formatCurrency } from '../lib/taxUtils'
+import { safeReload } from '../utils/reloadGuard'
 
 const blankItem = {
   productName: '',
@@ -89,8 +90,16 @@ export default function CreateInvoice() {
   }, [selectedCustomer])
 
   // Update customerId when customers list changes (e.g., after adding a new customer)
-  // Calculate due date based on terms
+  // Calculate due date based on terms (only when date or terms change, not when dueDate changes)
+  const isManualDueDateEdit = useRef(false)
+  
   useEffect(() => {
+    // Skip auto-calculation if user manually edited due date
+    if (isManualDueDateEdit.current) {
+      isManualDueDateEdit.current = false
+      return
+    }
+    
     const invoiceDate = new Date(date)
     let daysToAdd = 0
     
@@ -119,7 +128,7 @@ export default function CreateInvoice() {
     if (newDueDate !== dueDate) {
       setDueDate(newDueDate)
     }
-  }, [date, terms, dueDate])
+  }, [date, terms]) // Removed dueDate from dependencies to prevent overwriting manual edits
 
   useEffect(() => {
     if (!editingInvoice) {
@@ -167,7 +176,13 @@ export default function CreateInvoice() {
     setCustomerSignature(editingInvoice.customerSignature || '')
     setDate(editingInvoice.date || format(new Date(), 'yyyy-MM-dd'))
     setTerms(editingInvoice.terms || 'Due on Receipt')
-    setDueDate(editingInvoice.dueDate || format(new Date(), 'yyyy-MM-dd'))
+    // Preserve existing due date when editing, don't auto-recalculate
+    if (editingInvoice.dueDate) {
+      isManualDueDateEdit.current = true
+      setDueDate(editingInvoice.dueDate)
+    } else {
+      setDueDate(format(new Date(), 'yyyy-MM-dd'))
+    }
     setAmountPaid(editingInvoice.amountPaid || 0)
     setDiscountAmount(editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0)
     // Set tax enabled based on whether any items have tax
@@ -378,9 +393,9 @@ export default function CreateInvoice() {
       if (error.message && error.message.includes('CONFLICT')) {
         toast.error('Invoice was modified by another user. Refreshing...', { duration: 5000 })
         // Refresh page to get latest version
-        setTimeout(() => window.location.reload(), 2000)
+        safeReload(2000)
       } else {
-        toast.error('Failed to save invoice. Please try again.')
+      toast.error('Failed to save invoice. Please try again.')
       }
     }
   }
@@ -578,7 +593,10 @@ export default function CreateInvoice() {
               <input
                 type="date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onChange={(e) => {
+                  isManualDueDateEdit.current = true
+                  setDueDate(e.target.value)
+                }}
                 className="w-full bg-gray-50"
               />
               <p className="text-xs text-gray-500 mt-1">Auto-calculated from terms</p>

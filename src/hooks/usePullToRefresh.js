@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { safeReload } from '../utils/reloadGuard'
 
 export function usePullToRefresh() {
   const [pullToRefresh, setPullToRefresh] = useState({ 
@@ -78,7 +79,7 @@ export function usePullToRefresh() {
       
       if (currentDistance > 60) {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
-        setTimeout(() => window.location.reload(), 300)
+        safeReload(300)
       } else {
         const startDistance = currentDistance
         const startTime = performance.now()

@@ -8,6 +8,7 @@ import EmptyState, { icons } from '../components/EmptyState'
 import { formatCurrency } from '../lib/taxUtils'
 import { calculateReceivablesByCustomer, calculateTotalReceivables } from '../utils/calculateReceivables'
 import ConfirmModal from '../components/ConfirmModal'
+import { safeReload } from '../utils/reloadGuard'
 
 const emptyCustomer = { id: '', name: '', email: '', phone: '', state: '', gstin: '', address: '', aadhaar: '', dob: '', notes: '' }
 
@@ -128,9 +129,7 @@ export default function Customers() {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
         
         // Use DataContext refresh instead of full page reload
-        setTimeout(() => {
-          window.location.reload()
-        }, 300)
+        safeReload(300)
       } else {
         // Smooth return animation with easing
         const startDistance = currentDistance
@@ -967,9 +966,9 @@ export default function Customers() {
                     e.stopPropagation()
                     setDeleteModal({ isOpen: true, customer })
                   }}
-                  className="btn-danger !py-1 !px-2.5 !text-[9px] flex-shrink-0 whitespace-nowrap"
+                  className="btn-danger !py-1 !px-2.5 !text-xs flex-shrink-0 whitespace-nowrap"
                 >
-                  Del
+                  Delete
                 </button>
               </div>
             </div>

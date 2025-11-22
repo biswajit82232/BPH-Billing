@@ -4,6 +4,7 @@ import { useAuth, ALL_PAGES } from '../context/AuthContext'
 import { useToast } from '../components/ToastContainer'
 import PageHeader from '../components/PageHeader'
 import { clearLocalData, clearPendingInvoices } from '../lib/storage'
+import { safeReload } from '../utils/reloadGuard'
 
 export default function BackupRestore() {
   const fileRef = useRef(null)
@@ -118,7 +119,7 @@ export default function BackupRestore() {
       
       if (currentDistance > 60) {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
-        setTimeout(() => window.location.reload(), 300)
+        safeReload(300)
       } else {
         const startDistance = currentDistance
         const startTime = performance.now()
@@ -325,7 +326,7 @@ export default function BackupRestore() {
                   if (window.confirm(`Clear ${pendingInvoices.length} pending invoice(s) from sync queue?`)) {
                     clearPendingInvoices()
                     toast.success('Pending invoices cleared!')
-                    setTimeout(() => window.location.reload(), 500)
+                    safeReload(500)
                   }
                 }}
               >
@@ -343,7 +344,7 @@ export default function BackupRestore() {
                 clearLocalData()
                 clearPendingInvoices()
                 toast.success('Local data cleared! Refreshing page...')
-                setTimeout(() => window.location.reload(), 1000)
+                safeReload(1000)
               }
             }}
           >

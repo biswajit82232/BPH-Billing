@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext'
 import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/taxUtils'
 import { differenceInDays, parseISO, format } from 'date-fns'
+import { safeReload } from '../utils/reloadGuard'
 
 export default function AgingReport() {
   const { invoices, customers } = useData()
@@ -87,7 +88,7 @@ export default function AgingReport() {
       
       if (currentDistance > 60) {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
-        setTimeout(() => window.location.reload(), 300)
+        safeReload(300)
       } else {
         const startDistance = currentDistance
         const startTime = performance.now()

@@ -11,6 +11,7 @@ import EmptyState, { icons } from '../components/EmptyState'
 import { useToast } from '../components/ToastContainer'
 import { formatCurrency } from '../lib/taxUtils'
 import { format, subDays, startOfWeek, startOfMonth } from 'date-fns'
+import { safeReload } from '../utils/reloadGuard'
 
 const ITEMS_PER_PAGE = 50
 
@@ -170,9 +171,7 @@ export default function InvoiceList() {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
         
         // Use DataContext refresh instead of full page reload
-        setTimeout(() => {
-          window.location.reload()
-        }, 300)
+        safeReload(300)
       } else {
         // Smooth return animation with easing
         const startDistance = currentDistance

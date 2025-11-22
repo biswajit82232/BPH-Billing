@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { useData } from '../context/DataContext'
 import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/taxUtils'
+import { safeReload } from '../utils/reloadGuard'
 
 const gstr1Header = [
   'Type',
@@ -105,7 +106,7 @@ export default function GSTReport() {
       
       if (currentDistance > 60) {
         setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
-        setTimeout(() => window.location.reload(), 300)
+        safeReload(300)
       } else {
         const startDistance = currentDistance
         const startTime = performance.now()
