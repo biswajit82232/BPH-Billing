@@ -4,6 +4,7 @@ import PDFGenerator from '../components/PDFGenerator'
 import { formatCurrency } from '../lib/taxUtils'
 import { format } from 'date-fns'
 import { BRAND } from '../data/branding'
+import { useToast } from '../components/ToastContainer'
 
 // Direct link to Google Review form using short link format
 const GOOGLE_REVIEW_URL = 'https://g.page/r/Cfc9X2_ohssSEBM/review'
@@ -12,6 +13,7 @@ export default function CustomerPortal() {
   const { invoices } = useData()
   const [searchPhone, setSearchPhone] = useState('')
   const [searchError, setSearchError] = useState('')
+  const toast = useToast()
 
   const customerInvoices = useMemo(() => {
     if (!searchPhone || searchPhone.trim().length < 10) {
@@ -46,6 +48,10 @@ export default function CustomerPortal() {
     } else {
       setSearchError('')
     }
+  }
+
+  const handlePDFDownload = (invoice) => {
+    toast.success(`PDF downloaded successfully! Invoice #${invoice.invoiceNo}`)
   }
 
   return (
@@ -260,7 +266,8 @@ export default function CustomerPortal() {
                         <PDFGenerator
                           invoice={invoice}
                           label="Download PDF"
-                          className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5 text-xs sm:text-sm"
+                          className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5 text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          onDownload={handlePDFDownload}
                         />
                       </div>
                     </div>
