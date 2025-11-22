@@ -1,7 +1,6 @@
-const CACHE_VERSION = 'v3'
+const CACHE_VERSION = 'v2'
 const CACHE_NAME = `bph-billing-${CACHE_VERSION}`
 const RUNTIME_CACHE = 'bph-billing-runtime'
-const STATIC_CACHE = 'bph-billing-static'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -13,20 +12,12 @@ const PRECACHE_ASSETS = [
   '/favicon.svg'
 ]
 
-// Static assets that don't change often
-const STATIC_ASSETS = [
-  '/logo.png',
-  '/icon-192.png',
-  '/favicon.svg'
-]
-
 // Install event - precache assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    Promise.all([
-      caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS)),
-      caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
-    ]).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_ASSETS))
+      .then(() => self.skipWaiting())
   )
 })
 
@@ -36,70 +27,30 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((cacheName) => 
-            cacheName !== CACHE_NAME && 
-            cacheName !== RUNTIME_CACHE && 
-            cacheName !== STATIC_CACHE
-          )
+          .filter((cacheName) => cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE)
           .map((cacheName) => caches.delete(cacheName))
       )
     }).then(() => self.clients.claim())
   )
 })
 
-// Fetch event - network first, fallback to cache (optimized for PWA)
+// Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return
 
-  const url = new URL(event.request.url)
-
-  // Skip Firebase requests (always go to network for real-time data)
-  if (url.hostname.includes('firebaseio.com') || 
-      url.hostname.includes('googleapis.com') ||
-      url.hostname.includes('google.com')) {
-    return
-  }
-
-  // Skip chrome-extension and other protocols
-  if (!url.protocol.startsWith('http')) {
+  // Skip Firebase requests (always go to network)
+  if (event.request.url.includes('firebaseio.com') || 
+      event.request.url.includes('googleapis.com')) {
     return
   }
 
   event.respondWith(
     caches.open(RUNTIME_CACHE).then((cache) => {
-      // For navigation requests (HTML), try cache first for faster loading
-      if (event.request.mode === 'navigate') {
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            // Update cache in background
-            fetch(event.request).then((response) => {
-              if (response.status === 200) {
-                cache.put(event.request, response.clone())
-              }
-            }).catch(() => {})
-            return cachedResponse
-          }
-          // Not in cache, fetch from network
-          return fetch(event.request)
-            .then((response) => {
-              if (response.status === 200) {
-                cache.put(event.request, response.clone())
-              }
-              return response
-            })
-            .catch(() => {
-              // Network failed, return cached index.html
-              return caches.match('/index.html') || caches.match('/')
-            })
-        })
-      }
-
-      // For assets (JS, CSS, images), try network first, fallback to cache
       return fetch(event.request)
         .then((response) => {
           // Cache successful responses
-          if (response.status === 200 && response.type !== 'error') {
+          if (response.status === 200) {
             cache.put(event.request, response.clone())
           }
           return response
@@ -110,14 +61,13 @@ self.addEventListener('fetch', (event) => {
             if (cachedResponse) {
               return cachedResponse
             }
-            // Return offline response for failed requests
-            if (event.request.destination === 'image') {
-              return new Response('', { status: 503 })
+            // Return offline page for navigation requests
+            if (event.request.mode === 'navigate') {
+              return caches.match('/')
             }
             return new Response('Offline - Resource not available', {
               status: 503,
-              statusText: 'Service Unavailable',
-              headers: { 'Content-Type': 'text/plain' }
+              statusText: 'Service Unavailable'
             })
           })
         })

@@ -56,12 +56,6 @@
     "purchases": {
       ".read": true,
       ".write": true
-    },
-    
-    // Settings: read/write for authenticated users
-    "settings": {
-      ".read": true,
-      ".write": true
     }
   }
 }

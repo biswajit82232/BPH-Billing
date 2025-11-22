@@ -18,10 +18,6 @@ html {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   overflow-x: hidden;
-  /* Optimize scrolling performance */
-  transform: translateZ(0);
-  /* Prevent scroll jank */
-  overscroll-behavior: contain;
 }
 
 body {
@@ -42,11 +38,6 @@ body {
   min-height: 100vh;
   min-height: -webkit-fill-available; /* iOS Safari fix */
   overflow-x: hidden;
-  /* Enable GPU acceleration for root */
-  transform: translateZ(0);
-  will-change: contents;
-  /* Isolate compositing context */
-  isolation: isolate;
 }
 
 /* Mobile bottom safe area */
@@ -67,9 +58,6 @@ body {
 
 .animate-spin {
   animation: pullRefreshSpin 1s linear infinite;
-  will-change: transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 /* Smooth pull animation */
@@ -87,115 +75,24 @@ body {
   /* Fix for mobile browsers with dynamic viewport */
   html {
     height: -webkit-fill-available;
-    /* PWA safe area insets */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
   }
   
   body {
     height: -webkit-fill-available;
-    /* Ensure content respects safe areas on mobile */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  
-  /* PWA standalone mode adjustments */
-  @media (display-mode: standalone) {
-    body {
-      /* Adjust for standalone mode */
-      -webkit-user-select: none;
-      user-select: none;
-      -webkit-touch-callout: none;
-    }
   }
 }
 
-/* Smooth momentum scrolling for mobile - Performance optimized */
+/* Smooth momentum scrolling for mobile */
 * {
   -webkit-overflow-scrolling: touch;
-}
-
-/* Global performance optimizations for 60 FPS */
-/* Note: Only apply hardware acceleration to elements that need it */
-* {
-  /* Optimize text rendering */
-  text-rendering: optimizeSpeed;
-}
-
-/* Optimize common interactive elements */
-button, a {
-  /* Use GPU acceleration for interactive elements */
-  will-change: transform, opacity;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  /* Prevent text selection during interactions */
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-input, select, textarea {
-  /* Optimize form elements */
-  will-change: transform;
-  transform: translateZ(0);
-}
-
-/* Smooth transitions - use transform/opacity only (GPU accelerated) */
-button, a, input, select, textarea, .glass-panel {
-  transition-property: transform, opacity, box-shadow, border-color;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Optimize scrolling containers */
-main, nav {
-  /* Enable GPU acceleration for scroll containers */
-  transform: translate3d(0, 0, 0);
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  /* Only hint will-change when scrolling */
-  will-change: scroll-position;
-  /* Prevent layout shifts */
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-/* Sidebar optimization - prevent stuttering */
-aside {
-  /* Force GPU layer for sidebar */
-  transform: translate3d(0, 0, 0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  isolation: isolate;
-  /* Only apply will-change during animation, not all the time */
-}
-
-section {
-  /* Optimize sections that might scroll */
-  transform: translateZ(0);
-}
-
-/* Content visibility for off-screen content (improves rendering) */
-@media (prefers-reduced-motion: no-preference) {
-  /* Only apply to screens that can handle it */
-  [data-performance-optimize] {
-    content-visibility: auto;
-    contain-intrinsic-size: 200px;
-  }
 }
 
 .glass-panel {
   @apply bg-white rounded-md border border-gray-200 shadow-sm transition-all duration-200;
-  /* GPU acceleration for smooth hover effects */
-  will-change: box-shadow, border-color;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 .glass-panel:hover {
   @apply shadow-md border-gray-300;
-  /* Prevent layout shifts on hover */
-  transform: translateZ(0) scale(1);
 }
 
 .brand-gradient {
@@ -205,14 +102,6 @@ section {
 
 .btn-primary {
   @apply bg-brand-primary text-white font-medium rounded-md px-4 py-2 hover:bg-brand-dark hover:shadow-md transition-all duration-150 active:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-sm text-xs;
-  /* GPU acceleration for smooth button interactions */
-  will-change: background-color, box-shadow, transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.btn-primary:active {
-  transform: translateZ(0) scale(0.98);
 }
 
 /* Touch-friendly buttons for mobile */
@@ -292,10 +181,6 @@ table td {
 
 table tbody tr {
   @apply transition-all duration-150;
-  /* GPU acceleration for smooth row hover */
-  will-change: background-color;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 table tbody tr:nth-child(even) {
@@ -314,14 +199,11 @@ table tbody tr:last-child td {
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
-  /* Use GPU for scrollbar rendering */
-  transform: translateZ(0);
 }
 
 ::-webkit-scrollbar-track {
   @apply bg-gray-50;
   border-radius: 4px;
-  transform: translateZ(0);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -503,35 +385,14 @@ textarea:disabled {
 /* Button variants - Zoho compact style */
 .btn-secondary {
   @apply bg-white text-brand-primary border border-brand-primary font-medium rounded-md px-4 py-2 hover:bg-brand-primary hover:text-white hover:shadow-md transition-all duration-150 shadow-sm text-xs;
-  will-change: background-color, box-shadow, transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.btn-secondary:active {
-  transform: translateZ(0) scale(0.98);
 }
 
 .btn-danger {
   @apply bg-red-600 text-white font-medium rounded-md px-4 py-2 hover:bg-red-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
-  will-change: background-color, box-shadow, transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.btn-danger:active {
-  transform: translateZ(0) scale(0.98);
 }
 
 .btn-success {
   @apply bg-green-600 text-white font-medium rounded-md px-4 py-2 hover:bg-green-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
-  will-change: background-color, box-shadow, transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.btn-success:active {
-  transform: translateZ(0) scale(0.98);
 }
 
 /* Mobile - compact buttons with rounded square edges */
@@ -548,87 +409,71 @@ textarea:disabled {
   }
 }
 
-/* Toast animations - GPU accelerated */
+/* Toast animations */
 @keyframes slide-in-right {
   from {
-    transform: translateX(100%) translateZ(0);
+    transform: translateX(100%);
     opacity: 0;
   }
   to {
-    transform: translateX(0) translateZ(0);
+    transform: translateX(0);
     opacity: 1;
   }
 }
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
-  will-change: transform, opacity;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 /* Confirmation modal animations */
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateZ(0);
   }
   to {
     opacity: 1;
-    transform: translateZ(0);
   }
 }
 
 @keyframes scale-in {
   from {
-    transform: scale(0.95) translateZ(0);
+    transform: scale(0.95);
     opacity: 0;
   }
   to {
-    transform: scale(1) translateZ(0);
+    transform: scale(1);
     opacity: 1;
   }
 }
 
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
-  will-change: opacity;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 .animate-scale-in {
   animation: scale-in 0.2s ease-out;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
 }
 
 /* PWA Install Prompt animation */
 @keyframes slide-up {
   from {
-    transform: translateY(100%) translateZ(0);
+    transform: translateY(100%);
     opacity: 0;
   }
   to {
-    transform: translateY(0) translateZ(0);
+    transform: translateY(0);
     opacity: 1;
   }
 }
 
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
-  will-change: transform, opacity;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
-/* Loading spinner animation - GPU accelerated */
+/* Loading spinner animation */
 @keyframes spin {
-  from {
-    transform: rotate(0deg) translateZ(0);
-  }
   to {
-    transform: rotate(360deg) translateZ(0);
+    transform: rotate(360deg);
   }
 }
 
@@ -648,8 +493,6 @@ textarea:disabled {
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  will-change: opacity;
-  transform: translateZ(0);
 }
 
 /* Shimmer animation for loading bar - smooth and optimized */
@@ -665,8 +508,6 @@ textarea:disabled {
 .animate-shimmer {
   animation: shimmer 2s ease-in-out infinite;
   will-change: transform;
-  backface-visibility: hidden;
-  perspective: 1000px;
 }
 
 /* Screen reader only - visually hidden but accessible */

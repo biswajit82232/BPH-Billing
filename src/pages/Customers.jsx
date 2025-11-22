@@ -114,7 +114,7 @@ export default function Customers() {
       }
     }
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
       if (!pullStartRef.current) return
       if (window.innerWidth > 768) return
       
@@ -502,18 +502,28 @@ export default function Customers() {
           <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Customer Name *</label>
+              <label htmlFor="customer-name" className="block text-xs font-medium text-gray-700 mb-1">Customer Name *</label>
               <input
+                id="customer-name"
                 placeholder="Enter customer name"
                 value={form.name}
                 onChange={(e) => {
                   setForm((prev) => ({ ...prev, name: e.target.value }))
                   if (errors.name) setErrors((prev) => ({ ...prev, name: '' }))
                 }}
+                onBlur={() => {
+                  if (!form.name.trim()) {
+                    setErrors((prev) => ({ ...prev, name: 'Customer name is required' }))
+                  } else {
+                    setErrors((prev) => ({ ...prev, name: '' }))
+                  }
+                }}
                 required
+                aria-describedby={errors.name ? 'customer-name-error' : undefined}
+                aria-invalid={!!errors.name}
                 className={`w-full ${errors.name ? 'border-red-500' : ''}`}
               />
-              {errors.name && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.name}</p>}
+              {errors.name && <p id="customer-name-error" className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.name}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
@@ -528,8 +538,9 @@ export default function Customers() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number *</label>
+              <label htmlFor="customer-phone" className="block text-xs font-medium text-gray-700 mb-1">Phone Number *</label>
               <input
+                id="customer-phone"
                 type="tel"
                 placeholder="10 digit phone"
                 value={form.phone}
@@ -537,11 +548,20 @@ export default function Customers() {
                   setForm((prev) => ({ ...prev, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))
                   if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }))
                 }}
+                onBlur={() => {
+                  if (!form.phone || form.phone.length !== 10) {
+                    setErrors((prev) => ({ ...prev, phone: 'Phone number must be 10 digits' }))
+                  } else {
+                    setErrors((prev) => ({ ...prev, phone: '' }))
+                  }
+                }}
                 required
                 maxLength="10"
+                aria-describedby={errors.phone ? 'customer-phone-error' : undefined}
+                aria-invalid={!!errors.phone}
                 className={`w-full ${errors.phone ? 'border-red-500' : ''}`}
               />
-              {errors.phone && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.phone}</p>}
+              {errors.phone && <p id="customer-phone-error" className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.phone}</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
@@ -564,18 +584,28 @@ export default function Customers() {
               />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">GSTIN (Optional)</label>
+            <label htmlFor="customer-gstin" className="block text-xs font-medium text-gray-700 mb-1">GSTIN (Optional)</label>
             <input
+              id="customer-gstin"
               placeholder="15 character GSTIN"
               value={form.gstin}
                 onChange={(e) => {
                   setForm((prev) => ({ ...prev, gstin: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15) }))
                   if (errors.gstin) setErrors((prev) => ({ ...prev, gstin: '' }))
                 }}
+                onBlur={() => {
+                  if (form.gstin && form.gstin.length !== 15) {
+                    setErrors((prev) => ({ ...prev, gstin: 'GSTIN must be 15 characters' }))
+                  } else {
+                    setErrors((prev) => ({ ...prev, gstin: '' }))
+                  }
+                }}
               maxLength="15"
+                aria-describedby={errors.gstin ? 'customer-gstin-error' : undefined}
+                aria-invalid={!!errors.gstin}
                 className={`w-full ${errors.gstin ? 'border-red-500' : ''}`}
               />
-              {errors.gstin && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.gstin}</p>}
+              {errors.gstin && <p id="customer-gstin-error" className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.gstin}</p>}
             </div>
           </div>
           <details className="cursor-pointer">
@@ -593,6 +623,7 @@ export default function Customers() {
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Aadhaar Number</label>
                 <input
+                  id="customer-aadhaar"
                   type="text"
                   placeholder="12 digit Aadhaar"
                   value={form.aadhaar}
@@ -600,10 +631,19 @@ export default function Customers() {
                     setForm((prev) => ({ ...prev, aadhaar: e.target.value.replace(/\D/g, '').slice(0, 12) }))
                     if (errors.aadhaar) setErrors((prev) => ({ ...prev, aadhaar: '' }))
                   }}
+                  onBlur={() => {
+                    if (form.aadhaar && form.aadhaar.length !== 12) {
+                      setErrors((prev) => ({ ...prev, aadhaar: 'Aadhaar must be 12 digits' }))
+                    } else {
+                      setErrors((prev) => ({ ...prev, aadhaar: '' }))
+                    }
+                  }}
                   maxLength="12"
+                  aria-describedby={errors.aadhaar ? 'customer-aadhaar-error' : undefined}
+                  aria-invalid={!!errors.aadhaar}
                   className={`w-full ${errors.aadhaar ? 'border-red-500' : ''}`}
                 />
-                {errors.aadhaar && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.aadhaar}</p>}
+                {errors.aadhaar && <p id="customer-aadhaar-error" className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.aadhaar}</p>}
               </div>
             </div>
           </details>

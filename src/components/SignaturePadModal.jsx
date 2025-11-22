@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 
-export default function SignaturePadModal({ isOpen, onClose, onSave, value }) {
+export default function SignaturePadModal({ isOpen, onClose, onSave, value, label = 'Signature' }) {
   const sigPadRef = useRef(null)
   const [hasSignature, setHasSignature] = useState(false)
 
@@ -9,11 +9,10 @@ export default function SignaturePadModal({ isOpen, onClose, onSave, value }) {
     if (isOpen && sigPadRef.current) {
       if (value && sigPadRef.current.isEmpty()) {
         sigPadRef.current.fromDataURL(value)
-        // Use setTimeout to avoid setState in effect
-        setTimeout(() => setHasSignature(true), 0)
+        setHasSignature(true)
       } else if (!value) {
         sigPadRef.current.clear()
-        setTimeout(() => setHasSignature(false), 0)
+        setHasSignature(false)
       }
     }
   }, [isOpen, value])
@@ -37,7 +36,8 @@ export default function SignaturePadModal({ isOpen, onClose, onSave, value }) {
 
   const handleSave = () => {
     if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
-      // Export at high quality
+      // Export at high quality (2x scale for retina/high DPI)
+      const scale = window.devicePixelRatio || 2
       const dataURL = sigPadRef.current.toDataURL('image/png', 1.0)
       onSave(dataURL)
     } else {
@@ -100,7 +100,9 @@ export default function SignaturePadModal({ isOpen, onClose, onSave, value }) {
         left: 0, 
         right: 0, 
         bottom: 0,
+        height: '100vh',
         height: '100dvh', // Dynamic viewport height for mobile
+        maxHeight: '100vh',
         maxHeight: '100dvh',
         overflow: 'hidden',
         display: 'flex',

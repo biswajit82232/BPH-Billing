@@ -1,16 +1,13 @@
-import { format, isValid, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 
 export function makeInvoiceNo(seq, date = new Date(), prefix = 'BPH') {
   try {
-    let dateObj
-    if (date instanceof Date) {
-      dateObj = isValid(date) ? date : new Date()
-    } else {
-      const parsed = parseISO(date)
-      dateObj = isValid(parsed) ? parsed : new Date(date)
-      if (!isValid(dateObj)) {
-        dateObj = new Date()
-      }
+    const dateObj = date instanceof Date ? date : new Date(date)
+    if (isNaN(dateObj.getTime())) {
+      // Invalid date, use current date
+      const now = new Date()
+      const YYYYMM = now.toISOString().slice(0, 7).replace('-', '')
+      return `${prefix}-${YYYYMM}-${String(seq).padStart(4, '0')}`
     }
     const YYYYMM = dateObj.toISOString().slice(0, 7).replace('-', '')
     return `${prefix}-${YYYYMM}-${String(seq).padStart(4, '0')}`
@@ -153,36 +150,7 @@ export function amountToWords(amount) {
 }
 
 export function formatInvoiceDate(date) {
-  if (!date) return 'N/A'
-  try {
-    let dateObj
-    if (date instanceof Date) {
-      dateObj = isValid(date) ? date : null
-    } else if (typeof date === 'string') {
-      if (date.trim() === '') return 'N/A'
-      // Try parseISO first (handles ISO strings)
-      const isoDate = parseISO(date)
-      if (isValid(isoDate)) {
-        dateObj = isoDate
-      } else {
-        // Fallback to new Date
-        const parsed = new Date(date)
-        dateObj = isValid(parsed) ? parsed : null
-      }
-    } else {
-      return 'N/A'
-    }
-    
-    if (!dateObj) {
-      // Invalid date, return formatted string or fallback
-      return typeof date === 'string' && date.length > 0 ? date : 'N/A'
-    }
-    
-    return format(dateObj, 'dd MMM yyyy')
-  } catch {
-    // Fallback if format fails
-    return typeof date === 'string' && date.length > 0 ? date : 'N/A'
-  }
+  return format(new Date(date), 'dd MMM yyyy')
 }
 
 export function formatCurrency(value) {

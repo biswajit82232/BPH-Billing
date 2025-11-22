@@ -102,65 +102,6 @@ export const AuthProvider = ({ children }) => {
     }
   }, [online, users])
 
-  // Update user (declared before login to avoid circular dependency)
-  const updateUser = useCallback(async (userId, userData) => {
-    const updatedUsers = await Promise.all(users.map(async u => {
-      if (u.id === userId) {
-        // Check for duplicate username (excluding current user)
-        if (userData.username && users.some(u2 => u2.username === userData.username && u2.id !== userId)) {
-          return { ...u, error: 'Username already exists' }
-        }
-        
-        // Hash password if provided
-        const updateData = { ...userData }
-        if (updateData.password && updateData.password.trim() !== '') {
-          updateData.passwordHash = await hashPassword(updateData.password)
-          delete updateData.password // Remove plaintext password
-        } else {
-          delete updateData.password // Remove password field if empty
-        }
-        
-        // Remove old plaintext password field if migrating
-        if (updateData.passwordHash && u.password) {
-          delete u.password
-        }
-        
-        return {
-          ...u,
-          ...updateData,
-          updatedAt: new Date().toISOString(),
-        }
-      }
-      return u
-    }))
-    
-    // Check if there was a duplicate username error
-    const hasError = updatedUsers.some(u => u.error)
-    if (hasError) {
-      return { success: false, error: 'Username already exists' }
-    }
-    
-    setUsers(updatedUsers)
-    saveUsers(updatedUsers) // Save to localStorage immediately
-    
-    // Sync to Firebase if online
-    if (isFirebaseConfigured() && online) {
-      try {
-        const { db } = ensureFirebase()
-        if (db) {
-          const updatedUser = updatedUsers.find(u => u.id === userId)
-          if (updatedUser) {
-            await set(ref(db, `users/${userId}`), updatedUser)
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to update user in Firebase, saved locally:', error)
-      }
-    }
-    
-    return { success: true }
-  }, [users, online])
-
   // Login function
   const login = useCallback(async (username, password) => {
     // Trim whitespace from inputs
@@ -193,6 +134,8 @@ export const AuthProvider = ({ children }) => {
         passwordMatches = true
         // Auto-upgrade to hashed password
         const hashedPassword = await hashPassword(trimmedPassword)
+        user.passwordHash = hashedPassword
+        delete user.password
         await updateUser(user.id, { passwordHash: hashedPassword, password: null })
       }
     }
@@ -205,7 +148,7 @@ export const AuthProvider = ({ children }) => {
     writeSessionUser(user.username)
     setCurrentUser(user.username)
     return { success: true, user }
-  }, [users, updateUser])
+  }, [users])
 
   // Logout function
   const logout = useCallback(() => {
@@ -265,6 +208,64 @@ export const AuthProvider = ({ children }) => {
     return { success: true, user: newUser }
   }, [users, online])
 
+  // Update user
+  const updateUser = useCallback(async (userId, userData) => {
+    const updatedUsers = await Promise.all(users.map(async u => {
+      if (u.id === userId) {
+        // Check for duplicate username (excluding current user)
+        if (userData.username && users.some(u2 => u2.username === userData.username && u2.id !== userId)) {
+          return { ...u, error: 'Username already exists' }
+        }
+        
+        // Hash password if provided
+        const updateData = { ...userData }
+        if (updateData.password && updateData.password.trim() !== '') {
+          updateData.passwordHash = await hashPassword(updateData.password)
+          delete updateData.password // Remove plaintext password
+        } else {
+          delete updateData.password // Remove password field if empty
+        }
+        
+        // Remove old plaintext password field if migrating
+        if (updateData.passwordHash && u.password) {
+          delete u.password
+        }
+        
+        return {
+          ...u,
+          ...updateData,
+          updatedAt: new Date().toISOString(),
+        }
+      }
+      return u
+    }))
+    
+    // Check if there was a duplicate username error
+    const hasError = updatedUsers.some(u => u.error)
+    if (hasError) {
+      return { success: false, error: 'Username already exists' }
+    }
+    
+    setUsers(updatedUsers)
+    saveUsers(updatedUsers) // Save to localStorage immediately
+    
+    // Sync to Firebase if online
+    if (isFirebaseConfigured() && online) {
+      try {
+        const { db } = ensureFirebase()
+        if (db) {
+          const updatedUser = updatedUsers.find(u => u.id === userId)
+          if (updatedUser) {
+            await set(ref(db, `users/${userId}`), updatedUser)
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to update user in Firebase, saved locally:', error)
+      }
+    }
+    
+    return { success: true }
+  }, [users, online])
 
   // Delete user
   const deleteUser = useCallback(async (userId) => {

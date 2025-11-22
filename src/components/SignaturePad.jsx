@@ -2,8 +2,9 @@ import { useRef, useEffect, useState } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 import SignaturePadModal from './SignaturePadModal'
 
-export default function SignaturePad({ value, onChange, label = 'Signature', width = 400, height = 200 }) {
+export default function SignaturePad({ value, onChange, label = 'Signature', width = 400, height = 200, showClearButton = false }) {
   const sigPadRef = useRef(null)
+  const canvasRef = useRef(null)
   const [isMobile, setIsMobile] = useState(false)
   const [showModal, setShowModal] = useState(false)
 
@@ -28,6 +29,16 @@ export default function SignaturePad({ value, onChange, label = 'Signature', wid
     }
   }, [value])
 
+  const handleClear = (e) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    if (sigPadRef.current) {
+      sigPadRef.current.clear()
+      onChange('')
+    }
+  }
 
   const handleEnd = () => {
     if (sigPadRef.current && !sigPadRef.current.isEmpty()) {

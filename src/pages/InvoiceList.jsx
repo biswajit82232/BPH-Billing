@@ -156,7 +156,7 @@ export default function InvoiceList() {
       }
     }
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
       if (!pullStartRef.current) return
       if (window.innerWidth > 768) return
       
@@ -303,13 +303,8 @@ export default function InvoiceList() {
         invoice.customerName.toLowerCase().includes(query) ||
         phone.includes(query)
       const matchesStatus = status === 'all' || invoice.status === status
-      // Safe date comparison
-      const invoiceDate = invoice.date ? new Date(invoice.date) : null
-      const fromDate = from ? new Date(from) : null
-      const toDate = to ? new Date(to) : null
-      
-      const matchesFrom = !from || !fromDate || !invoiceDate || invoiceDate >= fromDate
-      const matchesTo = !to || !toDate || !invoiceDate || invoiceDate <= toDate
+      const matchesFrom = !from || new Date(invoice.date) >= new Date(from)
+      const matchesTo = !to || new Date(invoice.date) <= new Date(to)
       return matchesSearch && matchesStatus && matchesFrom && matchesTo
     })
 
@@ -318,16 +313,12 @@ export default function InvoiceList() {
       let aVal, bVal
       switch (sortField) {
         case 'date':
-          const aDate = a.date ? new Date(a.date) : null
-          const bDate = b.date ? new Date(b.date) : null
-          aVal = aDate && !isNaN(aDate.getTime()) ? aDate.getTime() : 0
-          bVal = bDate && !isNaN(bDate.getTime()) ? bDate.getTime() : 0
+          aVal = new Date(a.date).getTime()
+          bVal = new Date(b.date).getTime()
           break
         case 'dueDate':
-          const aDueDate = a.dueDate ? new Date(a.dueDate) : null
-          const bDueDate = b.dueDate ? new Date(b.dueDate) : null
-          aVal = aDueDate && !isNaN(aDueDate.getTime()) ? aDueDate.getTime() : 0
-          bVal = bDueDate && !isNaN(bDueDate.getTime()) ? bDueDate.getTime() : 0
+          aVal = a.dueDate ? new Date(a.dueDate).getTime() : 0
+          bVal = b.dueDate ? new Date(b.dueDate).getTime() : 0
           break
         case 'invoiceNo':
           aVal = a.invoiceNo
@@ -619,10 +610,7 @@ export default function InvoiceList() {
                     <td className="text-gray-600">{invoice.date}</td>
                     <td className="text-gray-600">
                       {invoice.dueDate || '--'}
-                      {invoice.dueDate && (() => {
-                        const dueDate = new Date(invoice.dueDate)
-                        return !isNaN(dueDate.getTime()) && dueDate < new Date() && invoice.status !== 'paid'
-                      })() && (
+                      {invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.status !== 'paid' && (
                         <span className="ml-2 text-red-600 text-xs">Overdue</span>
                       )}
                     </td>

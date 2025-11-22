@@ -2,14 +2,14 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { useData } from '../context/DataContext'
 import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/taxUtils'
-import { differenceInDays, parseISO, format, isValid } from 'date-fns'
+import { differenceInDays, parseISO, format } from 'date-fns'
 
 export default function AgingReport() {
   const { invoices, customers } = useData()
   const [selectedCustomer, setSelectedCustomer] = useState('all')
   
-  // Pull to refresh state (unused in this component but kept for consistency)
-  const [_pullToRefresh, setPullToRefresh] = useState({ 
+  // Pull to refresh state
+  const [pullToRefresh, setPullToRefresh] = useState({ 
     isPulling: false, 
     startY: 0, 
     distance: 0, 
@@ -76,7 +76,7 @@ export default function AgingReport() {
       }
     }
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
       if (!pullStartRef.current) return
       if (window.innerWidth > 768) return
       
@@ -177,16 +177,8 @@ export default function AgingReport() {
       }
 
       // Use dueDate if available, otherwise invoice date
-      let referenceDate = null
-      if (invoice.dueDate) {
-        const parsed = parseISO(invoice.dueDate)
-        referenceDate = isValid(parsed) ? parsed : null
-      }
-      if (!referenceDate && invoice.date) {
-        const parsed = parseISO(invoice.date)
-        referenceDate = isValid(parsed) ? parsed : null
-      }
-      const daysOverdue = referenceDate ? differenceInDays(today, referenceDate) : 0
+      const referenceDate = invoice.dueDate ? parseISO(invoice.dueDate) : parseISO(invoice.date)
+      const daysOverdue = differenceInDays(today, referenceDate)
 
       customerMap[customerId].invoices.push({
         ...invoice,
@@ -380,24 +372,13 @@ export default function AgingReport() {
                     .map((invoice) => (
                       <tr key={invoice.id} className="hover:bg-gray-50">
                         <td className="font-medium text-brand-primary">{invoice.invoiceNo}</td>
-                        <td className="text-gray-600">
-                          {invoice.date ? (() => {
-                            const date = parseISO(invoice.date)
-                            return isValid(date) ? format(date, 'dd MMM yyyy') : invoice.date
-                          })() : '--'}
-                        </td>
+                        <td className="text-gray-600">{format(new Date(invoice.date), 'dd MMM yyyy')}</td>
                         <td className={`font-medium ${
-                          invoice.dueDate && (() => {
-                            const dueDate = parseISO(invoice.dueDate)
-                            return isValid(dueDate) && dueDate < today && invoice.outstanding > 0
-                          })()
+                          invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.outstanding > 0
                             ? 'text-red-600'
                             : 'text-gray-600'
                         }`}>
-                          {invoice.dueDate ? (() => {
-                            const date = parseISO(invoice.dueDate)
-                            return isValid(date) ? format(date, 'dd MMM yyyy') : invoice.dueDate
-                          })() : '--'}
+                          {invoice.dueDate ? format(new Date(invoice.dueDate), 'dd MMM yyyy') : '--'}
                         </td>
                         <td className="text-right font-medium text-gray-900">{formatCurrency(invoice.totals?.grandTotal || 0)}</td>
                         <td className="text-right text-green-600">{formatCurrency(invoice.amountPaid || 0)}</td>

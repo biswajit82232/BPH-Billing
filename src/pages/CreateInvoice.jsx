@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { format } from 'date-fns'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useData } from '../context/DataContext'
@@ -47,13 +47,14 @@ export default function CreateInvoice() {
   const [taxEnabled, setTaxEnabled] = useState(true)
   const selectedCustomer = customerId ? customers.find((c) => c.id === customerId) : null
   
-  // Pull to refresh state (for UI indicator)
-  const [pullToRefresh] = useState({ 
+  // Pull to refresh state
+  const [pullToRefresh, setPullToRefresh] = useState({ 
     isPulling: false, 
     startY: 0, 
     distance: 0, 
     isRefreshing: false 
   })
+  const pullStartRef = useRef(null)
 
   // Toggle tax on/off
   const toggleTax = useCallback(() => {
@@ -79,21 +80,18 @@ export default function CreateInvoice() {
       return newTaxEnabled
     })
   }, [])
-  // Sync customer phone when customer changes
   useEffect(() => {
     if (selectedCustomer) {
       setCustomerPhoneOverride(selectedCustomer.phone || '')
     } else {
       setCustomerPhoneOverride('')
     }
-     
   }, [selectedCustomer])
 
-  // Calculate due date based on terms (derived state)
+  // Update customerId when customers list changes (e.g., after adding a new customer)
+  // Calculate due date based on terms
   useEffect(() => {
-    if (!date) return // Don't calculate if date is not set
     const invoiceDate = new Date(date)
-    if (isNaN(invoiceDate.getTime())) return // Don't calculate if date is invalid
     let daysToAdd = 0
     
     switch (terms) {
@@ -121,8 +119,7 @@ export default function CreateInvoice() {
     if (newDueDate !== dueDate) {
       setDueDate(newDueDate)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, terms])
+  }, [date, terms, dueDate])
 
   useEffect(() => {
     if (!editingInvoice) {
@@ -168,30 +165,9 @@ export default function CreateInvoice() {
     setNotes(editingInvoice.notes || 'Thanks for your business.')
     setReverseCharge(Boolean(editingInvoice.reverseCharge))
     setCustomerSignature(editingInvoice.customerSignature || '')
-    
-    // Validate and set date - ensure it's a valid date string
-    const invoiceDate = editingInvoice.date
-    let validDate = format(new Date(), 'yyyy-MM-dd')
-    if (invoiceDate) {
-      const testDate = new Date(invoiceDate)
-      if (!isNaN(testDate.getTime())) {
-        validDate = format(testDate, 'yyyy-MM-dd')
-      }
-    }
-    setDate(validDate)
-    
+    setDate(editingInvoice.date || format(new Date(), 'yyyy-MM-dd'))
     setTerms(editingInvoice.terms || 'Due on Receipt')
-    
-    // Validate and set due date
-    const invoiceDueDate = editingInvoice.dueDate
-    let validDueDate = format(new Date(), 'yyyy-MM-dd')
-    if (invoiceDueDate) {
-      const testDueDate = new Date(invoiceDueDate)
-      if (!isNaN(testDueDate.getTime())) {
-        validDueDate = format(testDueDate, 'yyyy-MM-dd')
-      }
-    }
-    setDueDate(validDueDate)
+    setDueDate(editingInvoice.dueDate || format(new Date(), 'yyyy-MM-dd'))
     setAmountPaid(editingInvoice.amountPaid || 0)
     setDiscountAmount(editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0)
     // Set tax enabled based on whether any items have tax
@@ -209,7 +185,6 @@ export default function CreateInvoice() {
     [items, selectedCustomer, customCustomer, settings],
   )
 
-  // Ensure discount doesn't exceed total (derived state validation)
   useEffect(() => {
     setDiscountAmount((prev) => {
       const baseTotal = derived.totals.grandTotal
@@ -218,7 +193,6 @@ export default function CreateInvoice() {
       }
       return prev
     })
-     
   }, [derived.totals.grandTotal])
 
   const discountValue = useMemo(() => {
@@ -270,6 +244,22 @@ export default function CreateInvoice() {
   const addItem = useCallback(() => setItems((prev) => [...prev, blankItem]), [])
   const removeItem = useCallback((index) => setItems((prev) => prev.filter((_, idx) => idx !== index)), [])
 
+  const addProductToItems = (productId) => {
+    const product = products.find((p) => p.id === productId)
+    if (!product) return
+    setItems((prev) => [
+      ...prev,
+      {
+        productName: product.name,
+        description: product.name,
+        hsn: product.hsn,
+        qty: 1,
+        rate: product.unit_price,
+        taxPercent: product.tax_percent,
+        productId: product.id,
+      },
+    ])
+  }
 
   const handleSave = async (status) => {
     // Validation
@@ -373,7 +363,7 @@ export default function CreateInvoice() {
     }
     
     try {
-      await saveInvoice(payload, finalStatus)
+      const savedInvoice = await saveInvoice(payload, finalStatus)
       const statusText = finalStatus === 'draft' ? 'saved as draft' : finalStatus === 'paid' ? 'saved and marked paid' : 'saved and marked sent'
       toast.success(`Invoice ${statusText}${customerData.id ? ` • Linked to ${customerData.name}` : ''}`)
       // Wait for React state updates to propagate and ensure new invoice appears in list
@@ -601,12 +591,21 @@ export default function CreateInvoice() {
             <p className="text-sm font-medium text-gray-700 mb-3">Additional Details</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number *</label>
+                <label htmlFor="invoice-phone" className="block text-xs font-medium text-gray-700 mb-1">Phone Number *</label>
                 <input
+                  id="invoice-phone"
                   type="tel"
                   placeholder="10 digit phone"
                   value={customCustomer.phone}
                   onChange={(e) => setCustomCustomer((prev) => ({ ...prev, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                  onBlur={() => {
+                    const phoneInput = selectedCustomer ? customerPhoneOverride : customCustomer.phone
+                    if (!phoneInput || phoneInput.trim().length !== 10) {
+                      // Validation will be shown on save, but we can add visual feedback here
+                    }
+                  }}
+                  aria-describedby="invoice-phone-hint"
+                  aria-required="true"
                   required
                   maxLength="10"
                   className="w-full"
@@ -675,18 +674,26 @@ export default function CreateInvoice() {
                 <span className="font-medium text-gray-900">{selectedCustomer.name}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs mb-1">Phone *</span>
+                <label htmlFor="customer-phone-override" className="text-gray-500 block text-xs mb-1">Phone *</label>
                 <input
+                  id="customer-phone-override"
                   type="tel"
                   value={customerPhoneOverride}
                   onChange={(e) =>
                     setCustomerPhoneOverride(e.target.value.replace(/\D/g, '').slice(0, 10))
                   }
+                  onBlur={() => {
+                    if (customerPhoneOverride && customerPhoneOverride.length !== 10) {
+                      // Visual feedback will be shown on save
+                    }
+                  }}
                   className="w-full text-sm"
                   placeholder="10 digit phone"
                   maxLength="10"
+                  aria-describedby="customer-phone-override-hint"
+                  aria-required="true"
                 />
-                <p className="text-xs text-gray-500 mt-1">Used on invoice, PDF & WhatsApp</p>
+                <p id="customer-phone-override-hint" className="text-xs text-gray-500 mt-1">Used on invoice, PDF & WhatsApp</p>
               </div>
               <div>
                 <span className="text-gray-500 block text-xs mb-1">Date of Birth</span>

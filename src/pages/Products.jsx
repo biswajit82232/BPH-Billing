@@ -26,7 +26,7 @@ export default function Products() {
   const [form, setForm] = useState(emptyProduct)
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
-  const [showPurchases, setShowPurchases] = useState(settings.enablePurchases)
+  const [showPurchases, setShowPurchases] = useState(false)
   const [purchaseRow, setPurchaseRow] = useState({ 
     productId: '', 
     productName: '', // For new product
@@ -123,7 +123,7 @@ export default function Products() {
       }
     }
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
       if (!pullStartRef.current) return
       if (window.innerWidth > 768) return
       
@@ -239,7 +239,7 @@ export default function Products() {
       setErrors({})
       setShowForm(false)
       toast.success(`Item "${form.name}" saved successfully!`)
-    } catch {
+    } catch (error) {
       toast.error('Failed to save item')
     } finally {
       setSaving(false)
@@ -577,15 +577,28 @@ export default function Products() {
           <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Item Name *</label>
+              <label htmlFor="product-name" className="block text-xs font-medium text-gray-700 mb-1">Item Name *</label>
           <input
+                id="product-name"
                 placeholder="Enter item name"
             value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+            onChange={(e) => {
+              setForm((prev) => ({ ...prev, name: e.target.value }))
+              if (errors.name) setErrors((prev) => ({ ...prev, name: '' }))
+            }}
+            onBlur={() => {
+              if (!form.name.trim()) {
+                setErrors((prev) => ({ ...prev, name: 'Product name is required' }))
+              } else {
+                setErrors((prev) => ({ ...prev, name: '' }))
+              }
+            }}
             required
+                aria-describedby={errors.name ? 'product-name-error' : undefined}
+                aria-invalid={!!errors.name}
                 className={`w-full ${errors.name ? 'border-red-500' : ''}`}
               />
-              {errors.name && <p className="text-xs text-red-600 mt-1">{errors.name}</p>}
+              {errors.name && <p id="product-name-error" className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.name}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>

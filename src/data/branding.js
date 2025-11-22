@@ -1,6 +1,6 @@
 export const BRAND = {
   name: 'Biswajit Power Hub',
-  tagline: 'Powering Every Ride',
+  tagline: 'Biswajit Power Hub',
   contact: ['9635505436', '9775441797'],
   email: 'biswajitpowerhub@gmail.com',
   address: 'Chunakhali, Berhampore, 742149',

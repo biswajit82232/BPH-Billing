@@ -8,14 +8,13 @@ import { useData } from '../context/DataContext'
 export default function InvoicePreviewModal({ invoice, isOpen, onClose }) {
   const { customers } = useData()
 
+  if (!isOpen || !invoice) return null
+
   // Find customer data if needed
   const invoiceWithCustomer = useMemo(() => {
-    if (!invoice) return null
     const customer = customers.find(c => c.id === invoice.customerId) || null
     return customer ? { ...invoice, customer } : invoice
   }, [invoice, customers])
-
-  if (!isOpen || !invoice) return null
 
   return (
     <div 

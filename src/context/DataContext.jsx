@@ -4,9 +4,8 @@ import { nanoid } from 'nanoid'
 import { ref, onValue, set, update, remove, off } from 'firebase/database'
 // Mock data removed - using empty initial state
 import { ensureFirebase, isFirebaseConfigured } from '../lib/firebase'
-import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData } from '../lib/storage'
+import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData, clearLocalData, clearPendingInvoices } from '../lib/storage'
 import { calculateInvoiceTotals, makeInvoiceNo } from '../lib/taxUtils'
-import { isValid } from 'date-fns'
 import { encryptCustomerFields, decryptCustomerFields } from '../lib/encryption'
 
 const DataContext = createContext()
@@ -91,7 +90,7 @@ const adjustProductsFromItems = (products, items, direction = -1) => {
     if (nextStock === currentStock && delta < 0) {
       // Stock would go negative, but we're preventing it
       // Log a warning in development
-      if (import.meta.env.DEV) {
+      if (process.env.NODE_ENV === 'development') {
         console.warn(`Stock adjustment would make ${prod.name} negative. Current: ${currentStock}, Delta: ${delta}`)
       }
     }
@@ -239,6 +238,7 @@ export const DataProvider = ({ children }) => {
     const bindList = (path, setter, fallback = []) => {
       const dataRef = ref(db, path)
       let isInitialLoad = true
+      const recentLocalIds = new Set() // Track recently added/updated items locally
       
       const listener = onValue(
         dataRef,
@@ -409,11 +409,7 @@ export const DataProvider = ({ children }) => {
           const bRecent = b._lastModified && (now - b._lastModified < 5000)
           if (aRecent && !bRecent) return -1
           if (!aRecent && bRecent) return 1
-          const aDate = a.date ? new Date(a.date) : null
-          const bDate = b.date ? new Date(b.date) : null
-          if (!aDate || isNaN(aDate.getTime())) return 1
-          if (!bDate || isNaN(bDate.getTime())) return -1
-          return bDate.getTime() - aDate.getTime()
+          return new Date(b.date) - new Date(a.date)
         })
       })
     }, [])
@@ -652,13 +648,7 @@ export const DataProvider = ({ children }) => {
         
         if (isInitialLoad) {
           // On initial load, use Firebase data
-          setActivity(dataArray.sort((a, b) => {
-            const aDate = a.date ? new Date(a.date + 'T00:00:00') : null
-            const bDate = b.date ? new Date(b.date + 'T00:00:00') : null
-            if (!aDate || isNaN(aDate.getTime())) return 1
-            if (!bDate || isNaN(bDate.getTime())) return -1
-            return bDate.getTime() - aDate.getTime()
-          }).slice(0, 20))
+          setActivity(dataArray.sort((a, b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00')).slice(0, 20))
           isInitialLoad = false
         } else {
           // After initial load, merge with local activity to preserve recent local changes
@@ -675,11 +665,7 @@ export const DataProvider = ({ children }) => {
             const merged = [...recentLocal, ...otherLocal, ...firebaseActivities]
               .sort((a, b) => {
                 // Sort by date, then by action for same date
-                const aDate = a.date ? new Date(a.date + 'T00:00:00') : null
-                const bDate = b.date ? new Date(b.date + 'T00:00:00') : null
-                const dateCompare = (!aDate || isNaN(aDate.getTime()) || !bDate || isNaN(bDate.getTime())) 
-                  ? 0 
-                  : bDate.getTime() - aDate.getTime()
+                const dateCompare = new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00')
                 if (dateCompare !== 0) return dateCompare
                 return b.action.localeCompare(a.action)
               })
@@ -877,9 +863,7 @@ export const DataProvider = ({ children }) => {
     const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
     const currentMeta = latestData.meta || meta
     const seq = (currentMeta?.invoiceSequence || 0) + 1
-    // Safely parse date for invoice number generation
-    const invoiceDate = form.date ? new Date(form.date) : new Date()
-    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, isValid(invoiceDate) ? invoiceDate : new Date(), settings.invoicePrefix)
+    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, new Date(form.date), settings.invoicePrefix)
     const existingInvoice = form.id ? invoices.find((inv) => inv.id === form.id) : null
     // Use latest products to avoid stale inventory data
     let nextProducts = latestData.products || products

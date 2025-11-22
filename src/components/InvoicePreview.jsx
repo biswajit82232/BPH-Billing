@@ -133,7 +133,7 @@ function InvoicePreview({ invoice }) {
             )}
             {customerDob && (
               <p className="text-xs md:text-sm text-gray-600">
-                <span className="font-medium">DOB:</span> {customerDob ? formatInvoiceDate(customerDob) : 'N/A'}
+                <span className="font-medium">DOB:</span> {formatInvoiceDate(customerDob)}
               </p>
             )}
             {customerAadhaar && (

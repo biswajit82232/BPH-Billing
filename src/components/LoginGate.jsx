@@ -6,7 +6,7 @@ import { clearAllLocalStorage } from '../lib/storage'
 
 export default function LoginGate({ children }) {
   const { settings } = useData()
-  const { currentUser, login } = useAuth()
+  const { currentUser, login, logout } = useAuth()
   const [form, setForm] = useState({ username: '', password: '' })
   const [error, setError] = useState('')
   const [showClearData, setShowClearData] = useState(false)

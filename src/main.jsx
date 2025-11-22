@@ -30,9 +30,10 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
   })
 }
 
-// Register service worker for PWA functionality (both dev and prod)
-// Note: Service worker works on localhost for testing
-registerServiceWorker()
+// Register service worker for PWA functionality
+if (import.meta.env.PROD) {
+  registerServiceWorker()
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

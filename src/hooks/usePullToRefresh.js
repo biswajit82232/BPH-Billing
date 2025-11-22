@@ -67,7 +67,7 @@ export function usePullToRefresh() {
       }
     }
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
       if (!pullStartRef.current) return
       if (window.innerWidth > 768) return
       
