@@ -34,7 +34,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 space-y-2 max-w-xs w-full px-4">
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 space-y-2 max-w-xs w-full px-4" aria-live="polite" aria-atomic="true">
         {toasts.map((toast) => (
           <Toast
             key={toast.id}

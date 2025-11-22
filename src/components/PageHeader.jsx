@@ -13,17 +13,17 @@ export default function PageHeader({
   secondaryLabel 
 }) {
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
       <div className="flex-1 min-w-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{title}</h1>
-        {subtitle && <p className="text-xs sm:text-sm text-gray-600 mt-1">{subtitle}</p>}
+        <h1 className="text-base sm:text-lg font-bold text-gray-900">{title}</h1>
+        {subtitle && <p className="text-[10px] sm:text-xs text-gray-600 mt-0.5">{subtitle}</p>}
       </div>
       {(action || secondaryAction) && (
-        <div className="flex flex-row justify-end gap-1.5 sm:gap-2 w-full sm:w-auto flex-shrink-0">
+        <div className="flex flex-row justify-end gap-1.5 w-full sm:w-auto flex-shrink-0">
           {secondaryAction && (
             <button 
               onClick={secondaryAction} 
-              className="btn-secondary text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
+              className="btn-secondary whitespace-nowrap"
             >
               {secondaryLabel}
             </button>
@@ -31,7 +31,7 @@ export default function PageHeader({
           {action && (
             <button 
               onClick={action} 
-              className="btn-primary flex items-center justify-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
+              className="btn-primary flex items-center justify-center gap-1.5 whitespace-nowrap"
             >
               {actionIcon && (
                 <span className="flex items-center justify-center flex-shrink-0">

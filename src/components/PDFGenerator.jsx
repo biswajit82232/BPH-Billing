@@ -41,7 +41,7 @@ export default function PDFGenerator({ invoice, label = 'Download PDF', classNam
 
   return (
     <>
-      <button type="button" className={`btn-primary ${className}`} onClick={handleDownload}>
+      <button type="button" className={className || 'btn-primary'} onClick={handleDownload}>
         {label}
       </button>
       <div className="hidden">

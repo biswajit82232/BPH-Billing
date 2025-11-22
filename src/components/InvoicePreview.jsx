@@ -80,11 +80,21 @@ function InvoicePreview({ invoice }) {
       {/* Header */}
       <div className={currentStyle.header} style={{ pageBreakInside: 'avoid' }}>
         <div className="space-y-1">
-          <h2 className={currentStyle.headerTitle}>{BRAND.name}</h2>
-          <p className={currentStyle.headerText}>{BRAND.tagline}</p>
-          <p className={currentStyle.headerText}>{BRAND.address}</p>
+          <h2 className={currentStyle.headerTitle}>{settings?.companyName || BRAND.name}</h2>
+          {(settings?.companyTagline || BRAND.tagline) && (
+            <p className={currentStyle.headerText}>{settings?.companyTagline || BRAND.tagline}</p>
+          )}
+          {(settings?.companyAddress || BRAND.address) && (
+            <p className={currentStyle.headerText}>{settings?.companyAddress || BRAND.address}</p>
+          )}
           {(invoice?.companyGstin || settings?.companyGstin || BRAND.gstin) && (
             <p className={currentStyle.headerText}>GSTIN: {invoice?.companyGstin || settings?.companyGstin || BRAND.gstin}</p>
+          )}
+          {(settings?.companyMobile || BRAND.contact) && (
+            <p className={currentStyle.headerText}>Mobile: {settings?.companyMobile || (Array.isArray(BRAND.contact) ? BRAND.contact.join(' / ') : BRAND.contact)}</p>
+          )}
+          {(settings?.companyEmail || BRAND.email) && (
+            <p className={currentStyle.headerText}>Email: {settings?.companyEmail || BRAND.email}</p>
           )}
         </div>
         <div className="text-left md:text-right space-y-2">
@@ -123,7 +133,7 @@ function InvoicePreview({ invoice }) {
             )}
             {customerDob && (
               <p className="text-xs md:text-sm text-gray-600">
-                <span className="font-medium">DOB:</span> {formatInvoiceDate(customerDob)}
+                <span className="font-medium">DOB:</span> {customerDob ? formatInvoiceDate(customerDob) : 'N/A'}
               </p>
             )}
             {customerAadhaar && (
@@ -279,15 +289,42 @@ function InvoicePreview({ invoice }) {
       {/* Signature Section */}
       <div className="pt-3 border-t border-gray-200" style={{ pageBreakInside: 'avoid' }}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
-          <div>
-            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Receiver's Signature</p>
-            <div className="border-b-2 border-gray-300 pt-8"></div>
-            <p className="text-xs text-gray-500 mt-1">Name & Date</p>
+          <div className="flex flex-col items-center">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2 w-full text-center">Receiver's Signature</p>
+            {invoice.customerSignature ? (
+              <div className="signature-container" style={{ minHeight: '120px', minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                <img 
+                  src={invoice.customerSignature} 
+                  alt="Customer Signature" 
+                  className="signature-rotated"
+                  style={{ maxWidth: '150px', maxHeight: '80px', objectFit: 'contain' }}
+                />
+              </div>
+            ) : (
+              <div className="border-b-2 border-gray-300 pt-8 w-full mb-2"></div>
+            )}
+            <p className="text-xs text-gray-500 mt-1 text-center w-full">{customerName}</p>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Authorized Signatory</p>
-            <div className="border-b-2 border-gray-300 pt-8"></div>
-            <p className="text-xs text-gray-500 mt-1">{BRAND.name}</p>
+          <div className="flex flex-col items-center">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2 w-full text-center">Authorized Signatory</p>
+            {settings.companySignature ? (
+              <div className="signature-container" style={{ minHeight: '120px', minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                <img 
+                  src={settings.companySignature} 
+                  alt="Company Signature" 
+                  className="signature-rotated"
+                  style={{ maxWidth: '150px', maxHeight: '80px', objectFit: 'contain' }}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center w-full mb-2" style={{ minHeight: '80px' }}>
+                <div className="text-center">
+                  <p className="text-base font-semibold text-gray-800" style={{ fontFamily: 'cursive', letterSpacing: '1px' }}>{BRAND.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">Authorized Signature</p>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1 text-center w-full">{BRAND.name}</p>
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 {
   "name": "bph-billing",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -12,6 +12,8 @@
     "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
+    "@sentry/react": "^10.26.0",
+    "crypto-js": "^4.2.0",
     "date-fns": "^4.1.0",
     "firebase": "^12.6.0",
     "googleapis": "^166.0.0",
@@ -19,7 +21,8 @@
     "nanoid": "^5.1.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.6"
+    "react-router-dom": "^7.9.6",
+    "react-signature-canvas": "^1.1.0-alpha.2"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.28.5",

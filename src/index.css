@@ -18,6 +18,10 @@ html {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   overflow-x: hidden;
+  /* Optimize scrolling performance */
+  transform: translateZ(0);
+  /* Prevent scroll jank */
+  overscroll-behavior: contain;
 }
 
 body {
@@ -38,12 +42,40 @@ body {
   min-height: 100vh;
   min-height: -webkit-fill-available; /* iOS Safari fix */
   overflow-x: hidden;
+  /* Enable GPU acceleration for root */
+  transform: translateZ(0);
+  will-change: contents;
+  /* Isolate compositing context */
+  isolation: isolate;
 }
 
 /* Mobile bottom safe area */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+/* Smooth pull-to-refresh animations */
+@keyframes pullRefreshSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: pullRefreshSpin 1s linear infinite;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Smooth pull animation */
+.pull-to-refresh-indicator {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease-out;
+  will-change: transform, opacity;
 }
 
 /* Ensure content is scrollable on mobile */
@@ -55,24 +87,115 @@ body {
   /* Fix for mobile browsers with dynamic viewport */
   html {
     height: -webkit-fill-available;
+    /* PWA safe area insets */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   
   body {
     height: -webkit-fill-available;
+    /* Ensure content respects safe areas on mobile */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  /* PWA standalone mode adjustments */
+  @media (display-mode: standalone) {
+    body {
+      /* Adjust for standalone mode */
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
   }
 }
 
-/* Smooth momentum scrolling for mobile */
+/* Smooth momentum scrolling for mobile - Performance optimized */
 * {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Global performance optimizations for 60 FPS */
+/* Note: Only apply hardware acceleration to elements that need it */
+* {
+  /* Optimize text rendering */
+  text-rendering: optimizeSpeed;
+}
+
+/* Optimize common interactive elements */
+button, a {
+  /* Use GPU acceleration for interactive elements */
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  /* Prevent text selection during interactions */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, select, textarea {
+  /* Optimize form elements */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Smooth transitions - use transform/opacity only (GPU accelerated) */
+button, a, input, select, textarea, .glass-panel {
+  transition-property: transform, opacity, box-shadow, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Optimize scrolling containers */
+main, nav {
+  /* Enable GPU acceleration for scroll containers */
+  transform: translate3d(0, 0, 0);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Only hint will-change when scrolling */
+  will-change: scroll-position;
+  /* Prevent layout shifts */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Sidebar optimization - prevent stuttering */
+aside {
+  /* Force GPU layer for sidebar */
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  isolation: isolate;
+  /* Only apply will-change during animation, not all the time */
+}
+
+section {
+  /* Optimize sections that might scroll */
+  transform: translateZ(0);
+}
+
+/* Content visibility for off-screen content (improves rendering) */
+@media (prefers-reduced-motion: no-preference) {
+  /* Only apply to screens that can handle it */
+  [data-performance-optimize] {
+    content-visibility: auto;
+    contain-intrinsic-size: 200px;
+  }
+}
+
 .glass-panel {
-  @apply bg-white rounded-lg border border-gray-200 shadow-md transition-all duration-200;
+  @apply bg-white rounded-md border border-gray-200 shadow-sm transition-all duration-200;
+  /* GPU acceleration for smooth hover effects */
+  will-change: box-shadow, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .glass-panel:hover {
-  @apply shadow-lg border-gray-300;
+  @apply shadow-md border-gray-300;
+  /* Prevent layout shifts on hover */
+  transform: translateZ(0) scale(1);
 }
 
 .brand-gradient {
@@ -81,48 +204,106 @@ body {
 }
 
 .btn-primary {
-  @apply bg-brand-primary text-white font-medium rounded-lg px-5 py-2.5 hover:bg-brand-dark hover:shadow-lg transition-all duration-150 active:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-md;
+  @apply bg-brand-primary text-white font-medium rounded-md px-4 py-2 hover:bg-brand-dark hover:shadow-md transition-all duration-150 active:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-sm text-xs;
+  /* GPU acceleration for smooth button interactions */
+  will-change: background-color, box-shadow, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-primary:active {
+  transform: translateZ(0) scale(0.98);
+}
+
+/* Touch-friendly buttons for mobile */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Signature Pad Modal - Ensure footer is always visible on mobile */
+@media (max-width: 768px) {
+  .signature-modal-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Ensure modal uses proper viewport height */
+  .signature-modal-container {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height */
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
 }
 
 /* Mobile - compact buttons with rounded square edges */
 @media (max-width: 768px) {
   .btn-primary {
-    padding: 0.4rem 0.65rem;
-    font-size: 0.8125rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
     line-height: 1.2;
     border-radius: 0.375rem; /* rounded-md - less rounded, more square */
     touch-action: manipulation;
-    min-height: 2rem;
+    min-height: 1.75rem;
+  }
+  
+  /* Ensure buttons are tappable on mobile - minimum touch target size */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Small buttons need larger touch targets */
+  button.text-xs {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
   }
 }
 
-/* Zoho-style tables */
+/* Zoho-style compact tables */
 table {
   @apply border-collapse w-full;
 }
 
 table thead {
-  @apply bg-gradient-to-r from-gray-50 to-gray-100;
+  @apply bg-gray-50;
 }
 
 table th {
-  @apply font-semibold text-gray-700 text-left text-xs uppercase tracking-wider px-6 py-4 border-b-2 border-gray-200;
+  @apply font-semibold text-gray-700 text-left text-[11px] uppercase tracking-wider px-3 py-2 border-b border-gray-200;
 }
 
 table td {
-  @apply px-6 py-4 text-sm text-gray-900 border-b border-gray-100;
+  @apply px-3 py-2 text-xs text-gray-900 border-b border-gray-100;
 }
 
 table tbody tr {
   @apply transition-all duration-150;
+  /* GPU acceleration for smooth row hover */
+  will-change: background-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 table tbody tr:nth-child(even) {
-  @apply bg-gray-50/50;
+  @apply bg-gray-50/30;
 }
 
 table tbody tr:hover {
-  @apply bg-blue-50 shadow-sm;
+  @apply bg-blue-50/50;
 }
 
 table tbody tr:last-child td {
@@ -133,11 +314,14 @@ table tbody tr:last-child td {
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
+  /* Use GPU for scrollbar rendering */
+  transform: translateZ(0);
 }
 
 ::-webkit-scrollbar-track {
   @apply bg-gray-50;
   border-radius: 4px;
+  transform: translateZ(0);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -181,41 +365,41 @@ table tbody tr:last-child td {
   select,
   textarea {
     font-size: 16px !important; /* Prevents iOS zoom */
-    padding: 0.65rem 1rem !important;
-    border: 2px solid #d1d5db !important;
+    padding: 0.5rem 0.75rem !important;
+    border: 1.5px solid #d1d5db !important;
   }
   
   /* Compact buttons - smaller with rounded square edges */
   button:not(.btn-primary):not(.btn-secondary):not(.btn-danger):not(.btn-success) {
-    padding: 0.4rem 0.65rem;
-    font-size: 0.8125rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
     line-height: 1.2;
     border-radius: 0.375rem; /* rounded-md - less rounded, more square */
-    min-height: 2rem;
+    min-height: 1.75rem;
   }
   
   /* Compact cards and panels */
   .glass-panel {
-    padding: 0.75rem;
+    padding: 0.625rem;
   }
   
   /* Compact table cells */
   table th, table td {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
   }
   
   /* Compact headings */
   h1 {
-    font-size: 1.25rem;
-  }
-  
-  h2 {
     font-size: 1.125rem;
   }
   
-  h3 {
+  h2 {
     font-size: 1rem;
+  }
+  
+  h3 {
+    font-size: 0.875rem;
   }
 }
 
@@ -237,12 +421,12 @@ table tbody tr:last-child td {
   }
 }
 
-/* Zoho-style form inputs - catch all inputs */
+/* Zoho-style compact form inputs - catch all inputs */
 input,
 select,
 textarea {
-  @apply rounded-lg px-4 py-3 bg-white text-gray-900 placeholder-gray-400 text-sm transition-all duration-150;
-  border: 2px solid #d1d5db !important; /* Gray-300 border - clean and visible */
+  @apply rounded-md px-3 py-2 bg-white text-gray-900 placeholder-gray-400 text-xs transition-all duration-150;
+  border: 1.5px solid #d1d5db !important; /* Gray-300 border - clean and visible */
   display: block !important;
   width: 100% !important;
   visibility: visible !important;
@@ -266,6 +450,19 @@ label {
   visibility: visible !important;
   opacity: 1 !important;
   margin-bottom: 0.25rem;
+}
+
+/* Screen reader only - visually hidden but accessible */
+label.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
 }
 
 /* Mobile-friendly inputs */
@@ -303,17 +500,38 @@ textarea:disabled {
   opacity: 0.6;
 }
 
-/* Button variants - Zoho style */
+/* Button variants - Zoho compact style */
 .btn-secondary {
-  @apply bg-white text-brand-primary border-2 border-brand-primary font-medium rounded-lg px-5 py-2.5 hover:bg-brand-primary hover:text-white hover:shadow-lg transition-all duration-150 shadow-sm;
+  @apply bg-white text-brand-primary border border-brand-primary font-medium rounded-md px-4 py-2 hover:bg-brand-primary hover:text-white hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+  will-change: background-color, box-shadow, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-secondary:active {
+  transform: translateZ(0) scale(0.98);
 }
 
 .btn-danger {
-  @apply bg-red-600 text-white font-medium rounded-lg px-5 py-2.5 hover:bg-red-700 hover:shadow-lg transition-all duration-150 shadow-md;
+  @apply bg-red-600 text-white font-medium rounded-md px-4 py-2 hover:bg-red-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+  will-change: background-color, box-shadow, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-danger:active {
+  transform: translateZ(0) scale(0.98);
 }
 
 .btn-success {
-  @apply bg-green-600 text-white font-medium rounded-lg px-5 py-2.5 hover:bg-green-700 hover:shadow-lg transition-all duration-150 shadow-md;
+  @apply bg-green-600 text-white font-medium rounded-md px-4 py-2 hover:bg-green-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+  will-change: background-color, box-shadow, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-success:active {
+  transform: translateZ(0) scale(0.98);
 }
 
 /* Mobile - compact buttons with rounded square edges */
@@ -321,80 +539,96 @@ textarea:disabled {
   .btn-secondary,
   .btn-danger,
   .btn-success {
-    padding: 0.4rem 0.65rem;
-    font-size: 0.8125rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
     line-height: 1.2;
     border-radius: 0.375rem; /* rounded-md - less rounded, more square */
     touch-action: manipulation;
-    min-height: 2rem;
+    min-height: 1.75rem;
   }
 }
 
-/* Toast animations */
+/* Toast animations - GPU accelerated */
 @keyframes slide-in-right {
   from {
-    transform: translateX(100%);
+    transform: translateX(100%) translateZ(0);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateX(0) translateZ(0);
     opacity: 1;
   }
 }
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Confirmation modal animations */
 @keyframes fade-in {
   from {
     opacity: 0;
+    transform: translateZ(0);
   }
   to {
     opacity: 1;
+    transform: translateZ(0);
   }
 }
 
 @keyframes scale-in {
   from {
-    transform: scale(0.95);
+    transform: scale(0.95) translateZ(0);
     opacity: 0;
   }
   to {
-    transform: scale(1);
+    transform: scale(1) translateZ(0);
     opacity: 1;
   }
 }
 
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
+  will-change: opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .animate-scale-in {
   animation: scale-in 0.2s ease-out;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
 /* PWA Install Prompt animation */
 @keyframes slide-up {
   from {
-    transform: translateY(100%);
+    transform: translateY(100%) translateZ(0);
     opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: translateY(0) translateZ(0);
     opacity: 1;
   }
 }
 
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
-/* Loading spinner animation */
+/* Loading spinner animation - GPU accelerated */
 @keyframes spin {
+  from {
+    transform: rotate(0deg) translateZ(0);
+  }
   to {
-    transform: rotate(360deg);
+    transform: rotate(360deg) translateZ(0);
   }
 }
 
@@ -414,20 +648,61 @@ textarea:disabled {
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  will-change: opacity;
+  transform: translateZ(0);
 }
 
-/* Shimmer animation for loading bar */
+/* Shimmer animation for loading bar - smooth and optimized */
 @keyframes shimmer {
   0% {
-    transform: translateX(-100%);
+    transform: translateX(-100%) translateZ(0);
   }
   100% {
-    transform: translateX(100%);
+    transform: translateX(200%) translateZ(0);
   }
 }
 
 .animate-shimmer {
-  animation: shimmer 2s infinite;
+  animation: shimmer 2s ease-in-out infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Screen reader only - visually hidden but accessible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Signature rotation for PDF - counter-clockwise (landscape orientation) */
+.signature-rotated {
+  transform: rotate(-90deg);
+  transform-origin: center center;
+  display: inline-block;
+  /* Adjust dimensions after rotation - width becomes height and vice versa */
+  width: auto;
+  height: auto;
+}
+
+/* Signature container - ensures proper alignment with name */
+.signature-container {
+  position: relative;
+  overflow: visible;
+}
+
+/* Ensure signature container doesn't affect text alignment */
+.signature-container::after {
+  content: '';
+  display: block;
+  clear: both;
 }
 
 /* Print styles */
@@ -443,6 +718,12 @@ textarea:disabled {
   .glass-panel {
     box-shadow: none;
     border: 1px solid #e5e7eb;
+  }
+  
+  /* Rotate signatures counter-clockwise in PDF */
+  .signature-rotated {
+    transform: rotate(-90deg);
+    transform-origin: center center;
   }
   
   @page {

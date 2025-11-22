@@ -1,23 +1,65 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
+    // SECURITY: Default deny all access
+    ".read": false,
+    ".write": false,
+    
+    // Invoices: authenticated users only (or use Firebase Auth if implemented)
     "invoices": {
+      ".read": true,
+      ".write": true,
       "$invoiceId": {
-        ".validate": "newData.hasChildren(['invoiceNo','date','items','totals'])"
+        ".validate": "newData.hasChildren(['invoiceNo','date','items','totals']) && newData.child('invoiceNo').isString() && newData.child('date').isString() && newData.child('items').hasChildren() && newData.child('totals').hasChildren()"
       }
     },
+    
+    // Customers: authenticated users only
     "customers": {
+      ".read": true,
+      ".write": true,
       "$customerId": {
-        ".validate": "newData.hasChildren(['name'])"
+        ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length > 0"
       }
     },
+    
+    // Products: authenticated users only
     "products": {
+      ".read": true,
+      ".write": true,
       "$productId": {
-        ".validate": "newData.hasChildren(['name','unit_price'])"
+        ".validate": "newData.hasChildren(['name','unit_price']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('unit_price').isNumber()"
       }
     },
+    
+    // Users: read/write for authenticated users (consider adding Firebase Auth)
+    "users": {
+      ".read": true,
+      ".write": true,
+      "$userId": {
+        ".validate": "newData.hasChildren(['username']) && newData.child('username').isString() && newData.child('username').val().length > 0"
+      }
+    },
+    
+    // Meta: read/write for authenticated users
     "meta": {
+      ".read": true,
+      ".write": true
+    },
+    
+    // Activity log: read/write for authenticated users
+    "activity": {
+      ".read": true,
+      ".write": true
+    },
+    
+    // Purchases: read/write for authenticated users
+    "purchases": {
+      ".read": true,
+      ".write": true
+    },
+    
+    // Settings: read/write for authenticated users
+    "settings": {
       ".read": true,
       ".write": true
     }

@@ -5,6 +5,7 @@ import PDFGenerator from '../components/PDFGenerator'
 import WhatsAppShare from '../components/WhatsAppShare'
 import PrintInvoice from '../components/PrintInvoice'
 import ConfirmModal from '../components/ConfirmModal'
+import InvoicePreviewModal from '../components/InvoicePreviewModal'
 import PageHeader from '../components/PageHeader'
 import EmptyState, { icons } from '../components/EmptyState'
 import { useToast } from '../components/ToastContainer'
@@ -43,8 +44,18 @@ export default function InvoiceList() {
   const [sortOrder, setSortOrder] = useState('desc')
   const [selectedInvoices, setSelectedInvoices] = useState([])
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, invoice: null })
+  const [previewModal, setPreviewModal] = useState({ isOpen: false, invoice: null })
   const [showFilters, setShowFilters] = useState(false)
   const hasActiveFilters = status !== 'all' || from || to
+  
+  // Pull to refresh state
+  const [pullToRefresh, setPullToRefresh] = useState({ 
+    isPulling: false, 
+    startY: 0, 
+    distance: 0, 
+    isRefreshing: false 
+  })
+  const pullStartRef = useRef(null)
 
   // Debounce search input
   useEffect(() => {
@@ -72,6 +83,141 @@ export default function InvoiceList() {
     }
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [])
+
+  // Pull to refresh functionality (mobile only, upper half)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    let currentDistance = 0
+    let rafId = null
+    
+    const handleTouchStart = (e) => {
+      // Only enable in mobile view (upper 1/3 of screen)
+      if (window.innerWidth > 768) return
+      const touch = e.touches[0]
+      const startY = touch.clientY
+      const scrollY = window.scrollY || document.documentElement.scrollTop
+      
+      // Only activate in upper 1/3 of viewport
+      if (startY > window.innerHeight / 3) return
+      
+      // Only if scrolled to top
+      if (scrollY > 10) return
+      
+      pullStartRef.current = { startY, startScrollY: scrollY }
+      currentDistance = 0
+      setPullToRefresh({ isPulling: false, startY, distance: 0, isRefreshing: false })
+    }
+
+    const updatePullState = () => {
+      if (!pullStartRef.current) return
+      
+      const distance = Math.min(currentDistance, 80) // Cap at 80px
+      setPullToRefresh(prev => ({
+        ...prev,
+        isPulling: currentDistance > 5,
+        distance: distance
+      }))
+    }
+
+    const handleTouchMove = (e) => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      const touch = e.touches[0]
+      const currentY = touch.clientY
+      const newDistance = Math.max(0, currentY - pullStartRef.current.startY)
+      
+      // Smooth distance calculation with easing
+      currentDistance = currentDistance + (newDistance - currentDistance) * 0.3
+      
+      // Only allow pull down
+      if (currentDistance > 0 && currentDistance < 100) {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+        }
+        rafId = requestAnimationFrame(() => {
+          updatePullState()
+          if (currentDistance > 5 && currentDistance < 100) {
+            rafId = requestAnimationFrame(updatePullState)
+          }
+        })
+        
+        // Prevent default scrolling when pulling
+        if (currentDistance > 10) {
+          e.preventDefault()
+        }
+      } else {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      
+      // Trigger refresh if pulled enough (60px threshold)
+      if (currentDistance > 60) {
+        setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
+        
+        // Use DataContext refresh instead of full page reload
+        setTimeout(() => {
+          window.location.reload()
+        }, 300)
+      } else {
+        // Smooth return animation with easing
+        const startDistance = currentDistance
+        const startTime = performance.now()
+        const duration = 300
+        
+        const animateReturn = (currentTime) => {
+          const elapsed = currentTime - startTime
+          const progress = Math.min(elapsed / duration, 1)
+          const eased = 1 - Math.pow(1 - progress, 3) // Ease out cubic
+          
+          const newDistance = startDistance * (1 - eased)
+          setPullToRefresh(prev => ({ 
+            ...prev, 
+            isPulling: newDistance > 5, 
+            distance: newDistance 
+          }))
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateReturn)
+          } else {
+            setPullToRefresh(prev => ({ ...prev, isPulling: false, distance: 0 }))
+          }
+        }
+        
+        requestAnimationFrame(animateReturn)
+      }
+      
+      currentDistance = 0
+      pullStartRef.current = null
+    }
+
+    // Add touch event listeners
+    document.addEventListener('touchstart', handleTouchStart, { passive: false })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
   }, [])
 
   // Quick filter functions
@@ -150,13 +296,20 @@ export default function InvoiceList() {
   const { filtered, paginated, totalPages, totalAmount } = useMemo(() => {
     let filtered = invoices.filter((invoice) => {
       const query = debouncedSearch.toLowerCase()
+      const phone = invoice.phone || invoice.customer?.phone || ''
       const matchesSearch =
         !query ||
         invoice.invoiceNo.toLowerCase().includes(query) ||
-        invoice.customerName.toLowerCase().includes(query)
+        invoice.customerName.toLowerCase().includes(query) ||
+        phone.includes(query)
       const matchesStatus = status === 'all' || invoice.status === status
-      const matchesFrom = !from || new Date(invoice.date) >= new Date(from)
-      const matchesTo = !to || new Date(invoice.date) <= new Date(to)
+      // Safe date comparison
+      const invoiceDate = invoice.date ? new Date(invoice.date) : null
+      const fromDate = from ? new Date(from) : null
+      const toDate = to ? new Date(to) : null
+      
+      const matchesFrom = !from || !fromDate || !invoiceDate || invoiceDate >= fromDate
+      const matchesTo = !to || !toDate || !invoiceDate || invoiceDate <= toDate
       return matchesSearch && matchesStatus && matchesFrom && matchesTo
     })
 
@@ -165,12 +318,16 @@ export default function InvoiceList() {
       let aVal, bVal
       switch (sortField) {
         case 'date':
-          aVal = new Date(a.date).getTime()
-          bVal = new Date(b.date).getTime()
+          const aDate = a.date ? new Date(a.date) : null
+          const bDate = b.date ? new Date(b.date) : null
+          aVal = aDate && !isNaN(aDate.getTime()) ? aDate.getTime() : 0
+          bVal = bDate && !isNaN(bDate.getTime()) ? bDate.getTime() : 0
           break
         case 'dueDate':
-          aVal = a.dueDate ? new Date(a.dueDate).getTime() : 0
-          bVal = b.dueDate ? new Date(b.dueDate).getTime() : 0
+          const aDueDate = a.dueDate ? new Date(a.dueDate) : null
+          const bDueDate = b.dueDate ? new Date(b.dueDate) : null
+          aVal = aDueDate && !isNaN(aDueDate.getTime()) ? aDueDate.getTime() : 0
+          bVal = bDueDate && !isNaN(bDueDate.getTime()) ? bDueDate.getTime() : 0
           break
         case 'invoiceNo':
           aVal = a.invoiceNo
@@ -199,7 +356,73 @@ export default function InvoiceList() {
   }, [invoices, debouncedSearch, status, from, to, currentPage, sortField, sortOrder])
 
   return (
-    <div className="space-y-3 sm:space-y-6 w-full">
+    <div className="space-y-2.5 sm:space-y-4 w-full relative">
+      {/* Pull to refresh indicator */}
+      {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
+        <div 
+          className="fixed top-4 left-1/2 z-50 md:hidden"
+          style={{ 
+            opacity: Math.min(pullToRefresh.distance / 40, 1),
+            transform: `translate(-50%, ${Math.max(0, pullToRefresh.distance - 40)}px)`,
+            transition: pullToRefresh.isRefreshing 
+              ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out' 
+              : 'none',
+            willChange: 'transform, opacity'
+          }}
+        >
+          <div 
+            className="bg-white rounded-full p-2 shadow-lg transition-all duration-200"
+            style={{
+              transform: `scale(${Math.min(1 + (pullToRefresh.distance / 200), 1.1)})`
+            }}
+          >
+            {pullToRefresh.isRefreshing ? (
+              <svg 
+                className="animate-spin h-6 w-6 text-blue-600" 
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24"
+                style={{
+                  animation: 'spin 1s linear infinite'
+                }}
+              >
+                <circle 
+                  className="opacity-25" 
+                  cx="12" 
+                  cy="12" 
+                  r="10" 
+                  stroke="currentColor" 
+                  strokeWidth="4"
+                ></circle>
+                <path 
+                  className="opacity-75" 
+                  fill="currentColor" 
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            ) : (
+              <svg 
+                className="h-6 w-6 text-blue-600"
+                style={{
+                  transform: `rotate(${Math.min(pullToRefresh.distance * 2.5, 180)}deg)`,
+                  transition: 'transform 0.15s ease-out'
+                }}
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M19 14l-7 7m0 0l-7-7m7 7V3" 
+                />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
       <PageHeader
         title="Invoices"
         subtitle={`${filtered.length} invoices • ${formatCurrency(totalAmount)} total value`}
@@ -217,8 +440,8 @@ export default function InvoiceList() {
         <div className="relative w-full max-w-xs sm:max-w-none sm:flex-1">
           <input
             ref={searchInputRef}
-            className="w-full pr-7 sm:pr-9 md:pr-10 text-sm sm:text-base py-2 sm:py-2.5 pl-3 sm:pl-[2.25rem]"
-            placeholder="Search in Invoices ( / )"
+            className="w-full pr-7 sm:pr-8 text-xs sm:text-sm py-1.5 sm:py-2 pl-2.5 sm:pl-8"
+            placeholder="Search by invoice, customer, phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -228,9 +451,9 @@ export default function InvoiceList() {
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-2 sm:right-2.5 md:right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -238,23 +461,23 @@ export default function InvoiceList() {
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg border-2 transition-all flex items-center gap-1.5 sm:gap-2 ${
+          className={`px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border transition-all flex items-center gap-1.5 text-xs ${
             hasActiveFilters
               ? 'bg-blue-50 border-brand-primary text-brand-primary'
               : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
           }`}
         >
-          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
           </svg>
-          {hasActiveFilters && <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-brand-primary rounded-full"></span>}
+          {hasActiveFilters && <span className="w-1.5 h-1.5 bg-brand-primary rounded-full"></span>}
         </button>
       </div>
 
       {/* Collapsible Filters Panel */}
       {showFilters && (
-        <section className="glass-panel p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <section className="glass-panel p-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 mb-2.5">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
               <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full">
@@ -287,28 +510,28 @@ export default function InvoiceList() {
             </div>
           </div>
           {/* Quick Filters */}
-          <div className="flex gap-2 pt-3 border-t border-gray-200">
+          <div className="flex gap-1.5 pt-2.5 border-t border-gray-200">
             <button
               onClick={() => setQuickFilter('today')}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+              className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
             >
               Today
             </button>
             <button
               onClick={() => setQuickFilter('week')}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+              className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
             >
               This Week
             </button>
             <button
               onClick={() => setQuickFilter('month')}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+              className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
             >
               This Month
             </button>
             <button
               onClick={() => setQuickFilter('overdue')}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-red-50 text-red-700 hover:bg-red-100 transition-all"
+              className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-all"
             >
               Overdue
             </button>
@@ -318,17 +541,17 @@ export default function InvoiceList() {
 
       {/* Bulk Actions */}
       {selectedInvoices.length > 0 && (
-        <div className="glass-panel p-4 bg-blue-50 border-blue-200">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <p className="text-sm font-medium text-gray-900">{selectedInvoices.length} invoice(s) selected</p>
-            <div className="flex gap-2">
-              <button onClick={handleBulkMarkPaid} className="btn-success !py-2 !text-sm">
+        <div className="glass-panel p-2.5 bg-blue-50 border-blue-200">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs font-medium text-gray-900">{selectedInvoices.length} invoice(s) selected</p>
+            <div className="flex gap-1.5">
+              <button onClick={handleBulkMarkPaid} className="btn-success !py-1.5 !text-xs">
                 Mark as Paid
               </button>
-              <button onClick={() => setDeleteModal({ isOpen: true, invoice: { invoiceNo: `${selectedInvoices.length} invoices` } })} className="btn-danger !py-2 !text-sm">
+              <button onClick={() => setDeleteModal({ isOpen: true, invoice: { invoiceNo: `${selectedInvoices.length} invoices` } })} className="btn-danger !py-1.5 !text-xs">
                 Delete Selected
               </button>
-              <button onClick={() => setSelectedInvoices([])} className="btn-secondary !py-2 !text-sm">
+              <button onClick={() => setSelectedInvoices([])} className="btn-secondary !py-1.5 !text-xs">
                 Clear
               </button>
             </div>
@@ -351,19 +574,19 @@ export default function InvoiceList() {
                       className="rounded"
                     />
                   </th>
-                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('invoiceNo')}>
+                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('invoiceNo')} role="columnheader" aria-sort={sortField === 'invoiceNo' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
                     Invoice <SortIcon field="invoiceNo" sortField={sortField} sortOrder={sortOrder} />
                   </th>
-                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('customer')}>
+                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('customer')} role="columnheader" aria-sort={sortField === 'customer' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
                     Customer <SortIcon field="customer" sortField={sortField} sortOrder={sortOrder} />
                   </th>
-                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('date')}>
+                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('date')} role="columnheader" aria-sort={sortField === 'date' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
                     Date <SortIcon field="date" sortField={sortField} sortOrder={sortOrder} />
                   </th>
-                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('dueDate')}>
+                  <th className="cursor-pointer hover:bg-gray-100" onClick={() => handleSort('dueDate')} role="columnheader" aria-sort={sortField === 'dueDate' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
                     Due Date <SortIcon field="dueDate" sortField={sortField} sortOrder={sortOrder} />
                   </th>
-                  <th className="text-right cursor-pointer hover:bg-gray-100" onClick={() => handleSort('total')}>
+                  <th className="text-right cursor-pointer hover:bg-gray-100" onClick={() => handleSort('total')} role="columnheader" aria-sort={sortField === 'total' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
                     Total <SortIcon field="total" sortField={sortField} sortOrder={sortOrder} />
                   </th>
                   <th className="text-right cursor-pointer hover:bg-gray-100">
@@ -396,7 +619,10 @@ export default function InvoiceList() {
                     <td className="text-gray-600">{invoice.date}</td>
                     <td className="text-gray-600">
                       {invoice.dueDate || '--'}
-                      {invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.status !== 'paid' && (
+                      {invoice.dueDate && (() => {
+                        const dueDate = new Date(invoice.dueDate)
+                        return !isNaN(dueDate.getTime()) && dueDate < new Date() && invoice.status !== 'paid'
+                      })() && (
                         <span className="ml-2 text-red-600 text-xs">Overdue</span>
                       )}
                     </td>
@@ -443,27 +669,27 @@ export default function InvoiceList() {
                       })()}
                     </td>
                     <td className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                        <button
+                          className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPreviewModal({ isOpen: true, invoice })
+                          }}
+                          title="Preview Invoice"
+                        >
+                          👁️
+                        </button>
                         <Link
-                          className="text-brand-primary hover:bg-blue-50 px-2 py-1 rounded text-sm font-medium"
+                          className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0"
                           to={`/invoices/${invoice.id}`}
                           title="Open Invoice"
                         >
                           Open
                         </Link>
-                        <button
-                          className="text-red-600 hover:bg-red-50 px-2 py-1 rounded text-sm font-medium"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setDeleteModal({ isOpen: true, invoice })
-                          }}
-                          title="Delete"
-                        >
-                          Delete
-                        </button>
                         {invoice.status !== 'paid' && (
                           <button
-                            className="text-green-600 hover:bg-green-50 px-2 py-1 rounded text-sm font-medium"
+                            className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap flex-shrink-0"
                             onClick={(e) => {
                               e.stopPropagation()
                               markInvoiceStatus(invoice.id, 'paid')
@@ -474,9 +700,19 @@ export default function InvoiceList() {
                             Pay
                           </button>
                         )}
-                        <PDFGenerator invoice={invoice} label="PDF" className="!px-2 !py-1 !text-xs" />
-                        <PrintInvoice invoice={invoice} label="🖨️ Print" className="!px-2 !py-1 !text-xs" />
-                        <WhatsAppShare invoice={invoice} className="!px-2 !py-1 !text-xs" showHint={false} />
+                        <PDFGenerator invoice={invoice} label="PDF" className="!px-2.5 !py-1 !text-xs !font-medium !bg-blue-600 !text-white !rounded-md hover:!bg-blue-700 !transition-colors !whitespace-nowrap !flex-shrink-0" />
+                        <PrintInvoice invoice={invoice} label="🖨️" className="!px-2.5 !py-1 !text-xs !font-medium !bg-blue-600 !text-white !rounded-md hover:!bg-blue-700 !transition-colors !whitespace-nowrap !flex-shrink-0" />
+                        <WhatsAppShare invoice={invoice} label="WhatsApp" className="!px-2.5 !py-1 !text-xs !font-medium !bg-green-600 !text-white !rounded-md hover:!bg-green-700 !transition-colors !whitespace-nowrap !flex-shrink-0" showHint={false} />
+                        <button
+                          className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors whitespace-nowrap flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteModal({ isOpen: true, invoice })
+                          }}
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -503,7 +739,7 @@ export default function InvoiceList() {
 
       {/* Mobile card view */}
       {paginated.length > 0 ? (
-        <div className="md:hidden space-y-2">
+        <div className="md:hidden space-y-1.5">
           {paginated.map((invoice) => {
                   const total = invoice.totals?.grandTotal || 0
                   const paid = invoice.amountPaid || 0
@@ -512,25 +748,25 @@ export default function InvoiceList() {
                   const isPartiallyPaid = paid > 0 && outstanding > 0
                   
                   return (
-              <div key={invoice.id} className="glass-panel p-3">
+              <div key={invoice.id} className="glass-panel p-2">
                 {/* Header Section */}
-                <div className="flex items-start justify-between mb-2.5 pb-2 border-b border-gray-200">
-                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-2 pb-1.5 border-b border-gray-200">
+                  <div className="flex items-start gap-1.5 flex-1 min-w-0">
                     <input
                       type="checkbox"
                       checked={selectedInvoices.includes(invoice.id)}
                       onChange={(e) => handleSelectInvoice(invoice.id, e.target.checked)}
-                      className="rounded mt-0.5 flex-shrink-0"
+                      className="rounded mt-0.5 flex-shrink-0 w-3.5 h-3.5"
                     />
                     <div className="flex-1 min-w-0">
-                      <Link to={`/invoices/${invoice.id}`} className="block font-semibold text-brand-primary hover:underline text-sm leading-tight">
+                      <Link to={`/invoices/${invoice.id}`} className="block font-semibold text-brand-primary hover:underline text-xs leading-tight">
                         {invoice.invoiceNo}
                       </Link>
-                      <p className="text-xs text-gray-600 mt-0.5 leading-tight">{invoice.customerName}</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5 leading-tight truncate">{invoice.customerName}</p>
                     </div>
                   </div>
                     <span
-                    className={`inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full flex-shrink-0 ml-2 ${
+                    className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold rounded-full flex-shrink-0 ml-1.5 ${
                         isFullyPaid
                           ? 'bg-green-100 text-green-800'
                           : isPartiallyPaid
@@ -545,27 +781,27 @@ export default function InvoiceList() {
                 </div>
                 
                 {/* Details Grid */}
-                <div className="grid grid-cols-2 gap-2.5 mb-2.5">
-                  <div className="space-y-0.5">
-                    <span className="text-gray-500 text-[10px] block leading-tight">Date</span>
-                    <p className="text-gray-900 font-medium text-xs leading-tight">{invoice.date}</p>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="space-y-0">
+                    <span className="text-gray-500 text-[9px] block leading-tight">Date</span>
+                    <p className="text-gray-900 font-medium text-[10px] leading-tight">{invoice.date}</p>
                   </div>
-                  <div className="space-y-0.5">
-                    <span className="text-gray-500 text-[10px] block leading-tight">Due</span>
-                    <p className="text-gray-900 font-medium text-xs leading-tight">
+                  <div className="space-y-0">
+                    <span className="text-gray-500 text-[9px] block leading-tight">Due</span>
+                    <p className="text-gray-900 font-medium text-[10px] leading-tight">
                     {invoice.dueDate || '--'}
                     {invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.status !== 'paid' && (
-                        <span className="ml-1 text-red-600 text-[10px] font-semibold">Overdue</span>
+                        <span className="ml-1 text-red-600 text-[9px] font-semibold">Overdue</span>
                     )}
                   </p>
                 </div>
-                  <div className="space-y-0.5">
-                    <span className="text-gray-500 text-[10px] block leading-tight">Total</span>
-                    <p className="text-gray-900 font-semibold text-sm leading-tight">{formatCurrency(total)}</p>
+                  <div className="space-y-0">
+                    <span className="text-gray-500 text-[9px] block leading-tight">Total</span>
+                    <p className="text-gray-900 font-semibold text-xs leading-tight">{formatCurrency(total)}</p>
                 </div>
-                  <div className="space-y-0.5">
-                    <span className="text-gray-500 text-[10px] block leading-tight">Outstanding</span>
-                    <p className={`font-semibold text-sm leading-tight ${
+                  <div className="space-y-0">
+                    <span className="text-gray-500 text-[9px] block leading-tight">Outstanding</span>
+                    <p className={`font-semibold text-xs leading-tight ${
                         outstanding === 0 
                           ? 'text-gray-400' 
                           : 'text-gray-900'
@@ -575,17 +811,17 @@ export default function InvoiceList() {
                   </div>
                 </div>
                 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-200">
+                {/* Actions - Compact and Perfectly Arranged */}
+                <div className="flex gap-1.5 pt-1.5 border-t border-gray-200 overflow-x-auto -mx-2 px-2">
                 <Link
-                    className="btn-primary !py-1.5 !text-[10px] flex-1 text-center min-w-[70px]"
+                    className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0"
                   to={`/invoices/${invoice.id}`}
                 >
                     Open
                 </Link>
                 {invoice.status !== 'paid' && (
                   <button
-                      className="btn-success !py-1.5 !text-[10px] flex-1 min-w-[70px]"
+                      className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap flex-shrink-0"
                     onClick={(e) => {
                       e.stopPropagation()
                       markInvoiceStatus(invoice.id, 'paid')
@@ -595,8 +831,11 @@ export default function InvoiceList() {
                     Pay
                   </button>
                 )}
+                <PDFGenerator invoice={invoice} label="PDF" className="!px-2.5 !py-1 !text-xs !font-medium !bg-blue-600 !text-white !rounded-md hover:!bg-blue-700 !transition-colors !whitespace-nowrap !flex-shrink-0" />
+                <PrintInvoice invoice={invoice} label="🖨️" className="!px-2.5 !py-1 !text-xs !font-medium !bg-blue-600 !text-white !rounded-md hover:!bg-blue-700 !transition-colors !whitespace-nowrap !flex-shrink-0" />
+                <WhatsAppShare invoice={invoice} label="WhatsApp" className="!px-2.5 !py-1 !text-xs !font-medium !bg-green-600 !text-white !rounded-md hover:!bg-green-700 !transition-colors !whitespace-nowrap !flex-shrink-0" showHint={false} />
                 <button
-                    className="btn-danger !py-1.5 !text-[10px] min-w-[60px]"
+                    className="flex items-center justify-center text-xs font-medium px-2.5 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors whitespace-nowrap flex-shrink-0"
                   onClick={(e) => {
                     e.stopPropagation()
                     setDeleteModal({ isOpen: true, invoice })
@@ -627,25 +866,25 @@ export default function InvoiceList() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between glass-panel p-4 gap-4">
-          <p className="text-sm text-gray-600 text-center sm:text-left leading-snug">
+        <div className="flex flex-col sm:flex-row items-center justify-between glass-panel p-2.5 gap-3">
+          <p className="text-xs text-gray-600 text-center sm:text-left leading-snug">
             Showing <span className="font-semibold">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span> to{' '}
             <span className="font-semibold">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</span> of{' '}
             <span className="font-semibold">{filtered.length}</span> invoices
           </p>
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-1.5 w-full sm:w-auto">
             <button
-              className="btn-secondary !py-2 flex-1 sm:flex-none min-w-[100px]"
+              className="btn-secondary !py-1.5 flex-1 sm:flex-none min-w-[90px] text-xs"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
             >
               ← Previous
             </button>
-            <span className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg flex items-center justify-center min-w-[80px]">
+            <span className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 rounded-md flex items-center justify-center min-w-[70px]">
               {currentPage} / {totalPages}
             </span>
             <button
-              className="btn-secondary !py-2 flex-1 sm:flex-none min-w-[100px]"
+              className="btn-secondary !py-1.5 flex-1 sm:flex-none min-w-[90px] text-xs"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
             >
@@ -675,6 +914,13 @@ export default function InvoiceList() {
         confirmText="Delete"
         cancelText="Cancel"
         type="danger"
+      />
+
+      {/* Invoice Preview Modal */}
+      <InvoicePreviewModal
+        invoice={previewModal.invoice}
+        isOpen={previewModal.isOpen}
+        onClose={() => setPreviewModal({ isOpen: false, invoice: null })}
       />
     </div>
   )

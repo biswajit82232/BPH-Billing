@@ -6,7 +6,7 @@ import { clearAllLocalStorage } from '../lib/storage'
 
 export default function LoginGate({ children }) {
   const { settings } = useData()
-  const { currentUser, login, logout } = useAuth()
+  const { currentUser, login } = useAuth()
   const [form, setForm] = useState({ username: '', password: '' })
   const [error, setError] = useState('')
   const [showClearData, setShowClearData] = useState(false)
@@ -21,11 +21,11 @@ export default function LoginGate({ children }) {
     return children
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setError('')
     
-    const result = login(form.username, form.password)
+    const result = await login(form.username, form.password)
     if (result.success) {
       setForm({ username: '', password: '' })
     } else {
@@ -142,8 +142,8 @@ export default function LoginGate({ children }) {
         </div>
             </div>
             {error && (
-              <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded flex items-start gap-2">
-                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded flex items-start gap-2" role="alert" aria-live="polite">
+                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="text-sm">{error}</span>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useData } from '../context/DataContext'
 import { useToast } from '../components/ToastContainer'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
@@ -48,12 +48,135 @@ export default function Products() {
   const [showFilters, setShowFilters] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, product: null })
+  
+  // Pull to refresh state
+  const [pullToRefresh, setPullToRefresh] = useState({ 
+    isPulling: false, 
+    startY: 0, 
+    distance: 0, 
+    isRefreshing: false 
+  })
+  const pullStartRef = useRef(null)
 
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  // Pull to refresh functionality (mobile only, upper 1/3)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    let currentDistance = 0
+    let rafId = null
+    
+    const handleTouchStart = (e) => {
+      if (window.innerWidth > 768) return
+      const touch = e.touches[0]
+      const startY = touch.clientY
+      const scrollY = window.scrollY || document.documentElement.scrollTop
+      
+      if (startY > window.innerHeight / 3) return
+      if (scrollY > 10) return
+      
+      pullStartRef.current = { startY, startScrollY: scrollY }
+      currentDistance = 0
+      setPullToRefresh({ isPulling: false, startY, distance: 0, isRefreshing: false })
+    }
+
+    const updatePullState = () => {
+      if (!pullStartRef.current) return
+      const distance = Math.min(currentDistance, 80)
+      setPullToRefresh(prev => ({
+        ...prev,
+        isPulling: currentDistance > 5,
+        distance: distance
+      }))
+    }
+
+    const handleTouchMove = (e) => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      const touch = e.touches[0]
+      const currentY = touch.clientY
+      const newDistance = Math.max(0, currentY - pullStartRef.current.startY)
+      
+      currentDistance = currentDistance + (newDistance - currentDistance) * 0.3
+      
+      if (currentDistance > 0 && currentDistance < 100) {
+        if (rafId) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => {
+          updatePullState()
+          if (currentDistance > 5 && currentDistance < 100) {
+            rafId = requestAnimationFrame(updatePullState)
+          }
+        })
+        
+        if (currentDistance > 10) e.preventDefault()
+      } else {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      
+      if (currentDistance > 60) {
+        setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
+        setTimeout(() => window.location.reload(), 300)
+      } else {
+        const startDistance = currentDistance
+        const startTime = performance.now()
+        const duration = 300
+        
+        const animateReturn = (currentTime) => {
+          const elapsed = currentTime - startTime
+          const progress = Math.min(elapsed / duration, 1)
+          const eased = 1 - Math.pow(1 - progress, 3)
+          
+          const newDistance = startDistance * (1 - eased)
+          setPullToRefresh(prev => ({ 
+            ...prev, 
+            isPulling: newDistance > 5, 
+            distance: newDistance 
+          }))
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateReturn)
+          } else {
+            setPullToRefresh(prev => ({ ...prev, isPulling: false, distance: 0 }))
+          }
+        }
+        
+        requestAnimationFrame(animateReturn)
+      }
+      
+      currentDistance = 0
+      pullStartRef.current = null
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: false })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [])
 
   // Filter products
   const filteredProducts = useMemo(() => {
@@ -116,7 +239,7 @@ export default function Products() {
       setErrors({})
       setShowForm(false)
       toast.success(`Item "${form.name}" saved successfully!`)
-    } catch (error) {
+    } catch {
       toast.error('Failed to save item')
     } finally {
       setSaving(false)
@@ -279,7 +402,55 @@ export default function Products() {
   }
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-6 w-full relative">
+      {/* Pull to refresh indicator */}
+      {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
+        <div 
+          className="fixed top-4 left-1/2 z-50 md:hidden"
+          style={{ 
+            opacity: Math.min(pullToRefresh.distance / 40, 1),
+            transform: `translate(-50%, ${Math.max(0, pullToRefresh.distance - 40)}px)`,
+            transition: pullToRefresh.isRefreshing 
+              ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out' 
+              : 'none',
+            willChange: 'transform, opacity'
+          }}
+        >
+          <div 
+            className="bg-white rounded-full p-2 shadow-lg transition-all duration-200"
+            style={{
+              transform: `scale(${Math.min(1 + (pullToRefresh.distance / 200), 1.1)})`
+            }}
+          >
+            {pullToRefresh.isRefreshing ? (
+              <svg 
+                className="animate-spin h-6 w-6 text-blue-600" 
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24"
+                style={{ animation: 'spin 1s linear infinite' }}
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg 
+                className="h-6 w-6 text-blue-600"
+                style={{
+                  transform: `rotate(${Math.min(pullToRefresh.distance * 2.5, 180)}deg)`,
+                  transition: 'transform 0.15s ease-out'
+                }}
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
       <PageHeader
         title="Items"
         subtitle={`${filteredProducts.length} active items`}
@@ -304,11 +475,14 @@ export default function Products() {
       {/* Zoho-style Compact Search Bar */}
       <div className="flex items-center gap-2 justify-center sm:justify-start">
         <div className="relative w-full max-w-xs sm:max-w-none sm:flex-1">
+          <label htmlFor="product-search" className="sr-only">Search products</label>
           <input
+            id="product-search"
             className="w-full pr-7 sm:pr-9 md:pr-10 text-sm sm:text-base py-2 sm:py-2.5 pl-3 sm:pl-[2.25rem]"
-            placeholder="Search in Items ( / )"
+            placeholder="Search items..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search products"
           />
           <svg className="hidden sm:block w-4 sm:h-4 md:w-5 md:h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -865,33 +1039,33 @@ export default function Products() {
       </section>
 
       {/* Mobile cards */}
-      <div className="md:hidden space-y-4">
+      <div className="md:hidden space-y-1.5">
         {filteredProducts.map((product) => (
           <div
             key={product.id}
-            className="glass-panel p-4 cursor-pointer"
+            className="glass-panel p-2 cursor-pointer"
             onClick={() => handleEditProduct(product)}
           >
             {/* Header Section */}
-            <div className="flex items-start justify-between mb-4 pb-3 border-b border-gray-200">
+            <div className="flex items-start justify-between mb-2 pb-1.5 border-b border-gray-200">
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-brand-primary text-base leading-tight">{product.name}</p>
-                {product.sku && <p className="text-xs text-gray-500 mt-1.5 leading-snug">SKU: {product.sku}</p>}
+                <p className="font-semibold text-brand-primary text-xs leading-tight truncate">{product.name}</p>
+                {product.sku && <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">SKU: {product.sku}</p>}
               </div>
-              <span className="inline-flex px-2.5 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 flex-shrink-0 ml-2">
+              <span className="inline-flex px-1.5 py-0.5 text-[9px] font-medium rounded-full bg-blue-100 text-blue-800 flex-shrink-0 ml-1.5">
                 {product.tax_percent}% GST
               </span>
             </div>
             
             {/* Details Grid */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <span className="text-gray-500 text-xs block leading-tight">Selling Price</span>
-                <span className="font-bold text-gray-900 text-base block leading-tight">{formatCurrency(product.unit_price)}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-0">
+                <span className="text-gray-500 text-[9px] block leading-tight">Selling Price</span>
+                <span className="font-bold text-gray-900 text-xs block leading-tight">{formatCurrency(product.unit_price)}</span>
               </div>
-              <div className="space-y-1">
-                <span className="text-gray-500 text-xs block leading-tight">Stock</span>
-                <span className={`font-bold text-base block leading-tight ${
+              <div className="space-y-0">
+                <span className="text-gray-500 text-[9px] block leading-tight">Stock</span>
+                <span className={`font-bold text-xs block leading-tight ${
                   (Number(product.stock) || 0) === 0 
                     ? 'text-red-600' 
                     : (Number(product.stock) || 0) < 10 
@@ -902,20 +1076,20 @@ export default function Products() {
                 </span>
               </div>
               {product.hsn && (
-                <div className="col-span-2 space-y-1">
-                  <span className="text-gray-500 text-xs block leading-tight">HSN/SAC</span>
-                  <span className="text-gray-900 text-sm font-medium block leading-tight">{product.hsn}</span>
+                <div className="col-span-2 space-y-0 mt-1">
+                  <span className="text-gray-500 text-[9px] block leading-tight">HSN/SAC</span>
+                  <span className="text-gray-900 text-[10px] font-medium block leading-tight">{product.hsn}</span>
                 </div>
               )}
             </div>
             
             {/* Delete Button for Mobile */}
-            <div className="mt-4 pt-3 border-t border-gray-200 flex justify-end" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-2 pt-1.5 border-t border-gray-200 flex justify-end" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={async () => {
                   setDeleteModal({ isOpen: true, product })
                 }}
-                className="btn-danger !py-1.5 !px-2 !text-[10px]"
+                className="btn-danger !py-1 !px-2 !text-[9px]"
               >
                 Delete
               </button>

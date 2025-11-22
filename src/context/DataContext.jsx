@@ -1,11 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { nanoid } from 'nanoid'
 import { ref, onValue, set, update, remove, off } from 'firebase/database'
 // Mock data removed - using empty initial state
 import { ensureFirebase, isFirebaseConfigured } from '../lib/firebase'
-import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData, clearLocalData, clearPendingInvoices } from '../lib/storage'
+import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData } from '../lib/storage'
 import { calculateInvoiceTotals, makeInvoiceNo } from '../lib/taxUtils'
+import { isValid } from 'date-fns'
+import { encryptCustomerFields, decryptCustomerFields } from '../lib/encryption'
 
 const DataContext = createContext()
 
@@ -17,10 +19,13 @@ const defaultState = {
   meta: {
     lastInvoiceNo: 0,
     lastCustomerNo: 0,
+        invoiceSequence: 0,
   },
   settings: {
     companyName: '',
+    companyTagline: '',
     companyAddress: '',
+    companyMobile: '',
     companyPhone: '',
     companyEmail: '',
     companyGstin: '19AKFPH1283D1ZE',
@@ -30,6 +35,7 @@ const defaultState = {
     enableLoginGate: true,
     enablePurchases: true,
     stockUpdateMode: 'sent',
+    companySignature: '',
   },
   activity: [],
 }
@@ -58,19 +64,37 @@ const adjustProductsFromItems = (products, items, direction = -1) => {
   let changed = false
   const next = products.map((prod) => {
     let delta = 0
+    // Prefer matching by ID (more reliable)
     if (prod.id && byId.has(prod.id)) {
       delta += direction * byId.get(prod.id)
     } else {
-      const nameKey = (prod.name || '').toLowerCase()
+      // Fallback to name matching (less reliable, but needed for legacy data)
+      // Only match if name is exact (case-insensitive) and not empty
+      const nameKey = (prod.name || '').trim().toLowerCase()
       if (nameKey && byName.has(nameKey)) {
-        delta += direction * byName.get(nameKey)
+        // Additional safety: only match if product name is unique in the list
+        // This prevents matching wrong products with similar names
+        const matchingItems = items.filter(item => {
+          const itemName = (item.productName || item.description || '').trim().toLowerCase()
+          return itemName === nameKey
+        })
+        // Only apply if we have a clear match
+        if (matchingItems.length > 0) {
+          delta += direction * byName.get(nameKey)
+        }
       }
     }
     if (!delta) return prod
     changed = true
     const currentStock = Number(prod.stock) || 0
     const nextStock = Math.max(0, currentStock + delta)
-    if (nextStock === currentStock) return prod
+    if (nextStock === currentStock && delta < 0) {
+      // Stock would go negative, but we're preventing it
+      // Log a warning in development
+      if (import.meta.env.DEV) {
+        console.warn(`Stock adjustment would make ${prod.name} negative. Current: ${currentStock}, Delta: ${delta}`)
+      }
+    }
     return { ...prod, stock: nextStock }
   })
   return changed ? next : products
@@ -97,9 +121,14 @@ export const DataProvider = ({ children }) => {
     
     const localData = loadLocalData()
     if (localData) {
+      // Decrypt customer sensitive fields when loading
+      const decryptedCustomers = (localData.customers || []).map(c => decryptCustomerFields(c))
+      // Initialize invoice versions for backward compatibility
+      const invoicesWithVersion = (localData.invoices || []).map(inv => ({ ...inv, version: inv.version || 0 }))
+      
       return {
-        invoices: localData.invoices || [],
-        customers: localData.customers || [],
+        invoices: invoicesWithVersion,
+        customers: decryptedCustomers,
         products: localData.products || [],
         purchases: localData.purchases || [],
         settings: localData.settings || defaultState.settings,
@@ -119,6 +148,7 @@ export const DataProvider = ({ children }) => {
   const [settings, setSettings] = useState(initialData.settings)
   const [meta, setMeta] = useState(initialData.meta)
   const [activity, setActivity] = useState(initialData.activity)
+  const recentActivityIdsRef = useRef(new Set())
   const [pendingInvoices, setPendingInvoices] = useState(() =>
     typeof window === 'undefined' ? [] : loadPendingInvoices(),
   )
@@ -143,9 +173,22 @@ export const DataProvider = ({ children }) => {
       const hasUserData = invoices.length > 0 || customers.length > 0 || products.length > 0
       
       if (hasExistingData || hasUserData) {
+        // Encrypt customers and invoice customer fields before saving
+        const encryptedCustomers = customers.map(c => encryptCustomerFields(c))
+        const encryptedInvoices = invoices.map(inv => {
+          if (inv.aadhaar || inv.dob) {
+            return {
+              ...inv,
+              aadhaar: inv.aadhaar ? encryptCustomerFields({ aadhaar: inv.aadhaar }).aadhaar : inv.aadhaar,
+              dob: inv.dob ? encryptCustomerFields({ dob: inv.dob }).dob : inv.dob,
+            }
+          }
+          return inv
+        })
+        
         saveLocalData({
-          invoices,
-          customers,
+          invoices: encryptedInvoices,
+          customers: encryptedCustomers,
           products,
           purchases,
           settings,
@@ -195,19 +238,72 @@ export const DataProvider = ({ children }) => {
 
     const bindList = (path, setter, fallback = []) => {
       const dataRef = ref(db, path)
+      let isInitialLoad = true
+      
       const listener = onValue(
         dataRef,
         (snapshot) => {
           const value = snapshot.val()
           if (value) {
-            const dataArray = Array.isArray(value) ? value : Object.values(value)
-            // Check if Firebase data contains sample data
-            const dataToCheck = { 
-              [path === 'invoices' ? 'invoices' : path === 'customers' ? 'customers' : path === 'products' ? 'products' : 'purchases']: dataArray 
+            const firebaseArray = Array.isArray(value) ? value : Object.values(value)
+            
+            if (isInitialLoad) {
+              // On initial load, use Firebase data (it's the source of truth)
+              setter(firebaseArray)
+              isInitialLoad = false
+            } else {
+              // After initial load, merge Firebase with local to preserve recent local changes
+              setter((prevLocal) => {
+                // Create a map of Firebase data by ID
+                const firebaseMap = new Map()
+                firebaseArray.forEach(item => {
+                  if (item && item.id) {
+                    firebaseMap.set(item.id, item)
+                  }
+                })
+                
+                // Merge: Keep local items that were recently added/updated (within last 5 seconds)
+                // Otherwise use Firebase data
+                const now = Date.now()
+                const merged = new Map()
+                
+                // First, add all Firebase items
+                firebaseMap.forEach((item, id) => {
+                  merged.set(id, item)
+                })
+                
+                // Then, add/update with local items that are recent or not in Firebase
+                prevLocal.forEach((localItem) => {
+                  if (localItem && localItem.id) {
+                    const firebaseItem = firebaseMap.get(localItem.id)
+                    // Keep local item if:
+                    // 1. It doesn't exist in Firebase, OR
+                    // 2. It was recently modified (within 10 seconds) and is newer than Firebase version
+                    const isRecent = localItem._lastModified && (now - localItem._lastModified < 10000)
+                    const firebaseModified = firebaseItem?._lastModified || 0
+                    const localModified = localItem._lastModified || 0
+                    const isNewer = localModified > firebaseModified
+                    
+                    if (!firebaseItem || (isRecent && isNewer)) {
+                      merged.set(localItem.id, localItem)
+                    } else if (firebaseItem) {
+                      // Use Firebase version if it's newer or local isn't recent
+                      merged.set(localItem.id, firebaseItem)
+                    }
+                  }
+                })
+                
+                return Array.from(merged.values())
+              })
             }
-            setter(dataArray)
           } else {
+            // No Firebase data - keep local data if it exists
+            if (!isInitialLoad) {
+              // Don't overwrite local data if Firebase is empty
+              return
+            }
             setter(fallback)
+            isInitialLoad = false
           }
           updateProgress()
         },
@@ -222,10 +318,277 @@ export const DataProvider = ({ children }) => {
       })
     }
 
-    bindList('invoices', setInvoices, [])
-    bindList('customers', setCustomers, [])
-    bindList('products', setProducts, [])
-    bindList('purchases', setPurchases, [])
+    // Load invoices with version initialization for optimistic locking
+    bindList('invoices', (data) => {
+      // Initialize version field for existing invoices (backward compatibility)
+      const invoicesArray = Array.isArray(data) ? data : (data ? Object.values(data) : [])
+      const invoicesWithVersion = invoicesArray.map(inv => {
+        // Decrypt customer fields in invoice if present
+        let decryptedAadhaar = inv.aadhaar || ''
+        let decryptedDob = inv.dob || ''
+        
+        if (decryptedAadhaar) {
+          try {
+            decryptedAadhaar = decryptCustomerFields({ aadhaar: decryptedAadhaar }).aadhaar
+          } catch {
+            // Already decrypted or decryption failed, keep as-is
+          }
+        }
+        
+        if (decryptedDob) {
+          try {
+            decryptedDob = decryptCustomerFields({ dob: decryptedDob }).dob
+          } catch {
+            // Already decrypted or decryption failed, keep as-is
+          }
+        }
+        
+        return {
+          ...inv,
+          version: inv.version || 0,
+          aadhaar: decryptedAadhaar,
+          dob: decryptedDob,
+        }
+      })
+      
+      // Use functional update to merge with existing state
+      setInvoices((prevInvoices) => {
+        // On initial load, replace all
+        if (prevInvoices.length === 0) {
+          return invoicesWithVersion
+        }
+        
+        // IMPORTANT: Always preserve ALL existing invoices, only merge/update with Firebase data
+        const now = Date.now()
+        const merged = new Map()
+        
+        // Create a map of local invoices for quick lookup - PRESERVE ALL EXISTING
+        prevInvoices.forEach(inv => {
+          if (inv && inv.id) {
+            merged.set(inv.id, inv)
+          }
+        })
+        
+        // Now merge/update with Firebase invoices
+        invoicesWithVersion.forEach(inv => {
+          if (inv && inv.id) {
+            const localInv = merged.get(inv.id)
+            const localModified = localInv?._lastModified || 0
+            const firebaseModified = inv._lastModified || 0
+            const isRecent = localModified > 0 && (now - localModified < 30000) // 30 seconds window
+            
+            // If local version is very recent (within 30 seconds) and newer, keep local
+            // Otherwise, update with Firebase version (it's the source of truth)
+            if (isRecent && localModified > firebaseModified) {
+              // Keep local version - it's newer
+              merged.set(inv.id, localInv)
+            } else {
+              // Update with Firebase version
+              merged.set(inv.id, inv)
+            }
+          } else {
+            // New invoice from Firebase - add it
+            merged.set(inv.id, inv)
+          }
+        })
+        
+        // Ensure ALL local invoices are preserved (especially ones not in Firebase yet)
+        prevInvoices.forEach((localInv) => {
+          if (localInv && localInv.id) {
+            const firebaseInv = merged.get(localInv.id)
+            if (!firebaseInv) {
+              // Local invoice not in Firebase - ALWAYS keep it (might be pending sync or offline)
+              merged.set(localInv.id, localInv)
+            }
+          }
+        })
+        
+        // Sort: recent additions first, then by date
+        return Array.from(merged.values()).sort((a, b) => {
+          const aRecent = a._lastModified && (now - a._lastModified < 5000)
+          const bRecent = b._lastModified && (now - b._lastModified < 5000)
+          if (aRecent && !bRecent) return -1
+          if (!aRecent && bRecent) return 1
+          const aDate = a.date ? new Date(a.date) : null
+          const bDate = b.date ? new Date(b.date) : null
+          if (!aDate || isNaN(aDate.getTime())) return 1
+          if (!bDate || isNaN(bDate.getTime())) return -1
+          return bDate.getTime() - aDate.getTime()
+        })
+      })
+    }, [])
+    
+    // Load customers and decrypt sensitive fields
+    bindList('customers', (data) => {
+      const customersArray = Array.isArray(data) ? data : (data ? Object.values(data) : [])
+      // Decrypt sensitive fields when loading from Firebase
+      const decryptedCustomers = customersArray.map(customer => decryptCustomerFields(customer))
+      
+      // Use functional update to properly merge with existing state
+      setCustomers((prevCustomers) => {
+        // Create a map for quick lookup
+        const decryptedMap = new Map()
+        decryptedCustomers.forEach(c => {
+          if (c && c.id) {
+            decryptedMap.set(c.id, c)
+          }
+        })
+        
+        // IMPORTANT: Always preserve ALL existing customers, only merge/update with Firebase data
+        const now = Date.now()
+        const merged = new Map()
+        
+        // Create a map of local customers for quick lookup - PRESERVE ALL EXISTING
+        prevCustomers.forEach(customer => {
+          if (customer && customer.id) {
+            merged.set(customer.id, customer)
+          }
+        })
+        
+        // Now merge/update with Firebase customers
+        decryptedMap.forEach((customer, id) => {
+          const localCustomer = merged.get(id)
+          const localModified = localCustomer?._lastModified || 0
+          const firebaseModified = customer._lastModified || 0
+          const isRecent = localModified > 0 && (now - localModified < 30000) // 30 seconds window
+          
+          // If local version is very recent (within 30 seconds) and newer, keep local
+          // Otherwise, update with Firebase version (it's the source of truth)
+          if (isRecent && localModified > firebaseModified) {
+            // Keep local version - it's newer
+            merged.set(id, localCustomer)
+          } else {
+            // Update with Firebase version
+            merged.set(id, customer)
+          }
+        })
+        
+        // Ensure ALL local customers are preserved (especially ones not in Firebase yet)
+        prevCustomers.forEach((localCustomer) => {
+          if (localCustomer && localCustomer.id) {
+            const firebaseCustomer = merged.get(localCustomer.id)
+            if (!firebaseCustomer) {
+              // Local customer not in Firebase - ALWAYS keep it (might be pending sync or offline)
+              merged.set(localCustomer.id, localCustomer)
+            }
+          }
+        })
+        
+        return Array.from(merged.values())
+      })
+    }, [])
+    
+    // Load products with merge logic for recent local items
+    bindList('products', (data) => {
+      const productsArray = Array.isArray(data) ? data : (data ? Object.values(data) : [])
+      // Use functional update to merge with existing state
+      setProducts((prevProducts) => {
+        // On initial load, replace all
+        if (prevProducts.length === 0) {
+          return productsArray
+        }
+        
+        // IMPORTANT: Always preserve ALL existing products, only merge/update with Firebase data
+        const now = Date.now()
+        const merged = new Map()
+        
+        // Create a map of local products for quick lookup - PRESERVE ALL EXISTING
+        prevProducts.forEach(product => {
+          if (product && product.id) {
+            merged.set(product.id, product)
+          }
+        })
+        
+        // Now merge/update with Firebase products
+        productsArray.forEach(prod => {
+          if (prod && prod.id) {
+            const localProduct = merged.get(prod.id)
+            const localModified = localProduct?._lastModified || 0
+            const firebaseModified = prod._lastModified || 0
+            const isRecent = localModified > 0 && (now - localModified < 30000) // 30 seconds window
+            
+            // If local version is very recent (within 30 seconds) and newer, keep local
+            // Otherwise, update with Firebase version (it's the source of truth)
+            if (isRecent && localModified > firebaseModified) {
+              // Keep local version - it's newer
+              merged.set(prod.id, localProduct)
+            } else {
+              // Update with Firebase version
+              merged.set(prod.id, prod)
+            }
+          }
+        })
+        
+        // Ensure ALL local products are preserved (especially ones not in Firebase yet)
+        prevProducts.forEach((localProduct) => {
+          if (localProduct && localProduct.id) {
+            const firebaseProduct = merged.get(localProduct.id)
+            if (!firebaseProduct) {
+              // Local product not in Firebase - ALWAYS keep it (might be pending sync or offline)
+              merged.set(localProduct.id, localProduct)
+            }
+          }
+        })
+        
+        return Array.from(merged.values())
+      })
+    }, [])
+    
+    // Load purchases with merge logic for recent local items
+    bindList('purchases', (data) => {
+      const purchasesArray = Array.isArray(data) ? data : (data ? Object.values(data) : [])
+      // Use functional update to merge with existing state
+      setPurchases((prevPurchases) => {
+        // On initial load, replace all
+        if (prevPurchases.length === 0) {
+          return purchasesArray
+        }
+        
+        // IMPORTANT: Always preserve ALL existing purchases, only merge/update with Firebase data
+        const now = Date.now()
+        const merged = new Map()
+        
+        // Create a map of local purchases for quick lookup - PRESERVE ALL EXISTING
+        prevPurchases.forEach(purchase => {
+          if (purchase && purchase.id) {
+            merged.set(purchase.id, purchase)
+          }
+        })
+        
+        // Now merge/update with Firebase purchases
+        purchasesArray.forEach(purchase => {
+          if (purchase && purchase.id) {
+            const localPurchase = merged.get(purchase.id)
+            const localModified = localPurchase?._lastModified || 0
+            const firebaseModified = purchase._lastModified || 0
+            const isRecent = localModified > 0 && (now - localModified < 30000) // 30 seconds window
+            
+            // If local version is very recent (within 30 seconds) and newer, keep local
+            // Otherwise, update with Firebase version (it's the source of truth)
+            if (isRecent && localModified > firebaseModified) {
+              // Keep local version - it's newer
+              merged.set(purchase.id, localPurchase)
+            } else {
+              // Update with Firebase version
+              merged.set(purchase.id, purchase)
+            }
+          }
+        })
+        
+        // Ensure ALL local purchases are preserved (especially ones not in Firebase yet)
+        prevPurchases.forEach((localPurchase) => {
+          if (localPurchase && localPurchase.id) {
+            const firebasePurchase = merged.get(localPurchase.id)
+            if (!firebasePurchase) {
+              // Local purchase not in Firebase - ALWAYS keep it (might be pending sync or offline)
+              merged.set(localPurchase.id, localPurchase)
+            }
+          }
+        })
+        
+        return Array.from(merged.values())
+      })
+    }, [])
 
     const metaRef = ref(db, 'meta')
     const metaListener = onValue(metaRef, (snapshot) => {
@@ -281,11 +644,49 @@ export const DataProvider = ({ children }) => {
     })
 
     const activityRef = ref(db, 'activity')
+    let isInitialLoad = true
     const activityListener = onValue(activityRef, (snapshot) => {
       if (snapshot.exists()) {
         const value = snapshot.val()
         const dataArray = Array.isArray(value) ? value : Object.values(value)
-        setActivity(dataArray)
+        
+        if (isInitialLoad) {
+          // On initial load, use Firebase data
+          setActivity(dataArray.sort((a, b) => {
+            const aDate = a.date ? new Date(a.date + 'T00:00:00') : null
+            const bDate = b.date ? new Date(b.date + 'T00:00:00') : null
+            if (!aDate || isNaN(aDate.getTime())) return 1
+            if (!bDate || isNaN(bDate.getTime())) return -1
+            return bDate.getTime() - aDate.getTime()
+          }).slice(0, 20))
+          isInitialLoad = false
+        } else {
+          // After initial load, merge with local activity to preserve recent local changes
+          setActivity((prevLocal) => {
+            // Get recent activity IDs to preserve them
+            const recentIds = recentActivityIdsRef.current
+            // Combine Firebase data with local activity, removing duplicates
+            // But preserve recent local activities
+            const localIds = new Set(prevLocal.map(a => a.id))
+            const firebaseActivities = dataArray.filter(a => !localIds.has(a.id) && !recentIds.has(a.id))
+            // Keep recent local activities at the top
+            const recentLocal = prevLocal.filter(a => recentIds.has(a.id))
+            const otherLocal = prevLocal.filter(a => !recentIds.has(a.id))
+            const merged = [...recentLocal, ...otherLocal, ...firebaseActivities]
+              .sort((a, b) => {
+                // Sort by date, then by action for same date
+                const aDate = a.date ? new Date(a.date + 'T00:00:00') : null
+                const bDate = b.date ? new Date(b.date + 'T00:00:00') : null
+                const dateCompare = (!aDate || isNaN(aDate.getTime()) || !bDate || isNaN(bDate.getTime())) 
+                  ? 0 
+                  : bDate.getTime() - aDate.getTime()
+                if (dateCompare !== 0) return dateCompare
+                return b.action.localeCompare(a.action)
+              })
+              .slice(0, 20)
+            return merged
+          })
+        }
       }
       updateProgress()
     }, (error) => {
@@ -302,31 +703,28 @@ export const DataProvider = ({ children }) => {
 
   const persistMeta = async (nextMeta) => {
     setMeta(nextMeta)
-    if (!firebaseReady || !online) {
+    // Use loadLocalData to get latest state instead of stale closures
+    const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    if (!firebaseReady || !online || !db) {
       // Save to localStorage when offline
       saveLocalData({
-        invoices,
-        customers,
-        products,
-        purchases,
-        settings,
+        ...latestData,
         meta: nextMeta,
-        activity,
       })
       return
     }
     try {
-    await set(ref(db, 'meta'), nextMeta)
+      await set(ref(db, 'meta'), nextMeta)
+      // Also update localStorage after successful Firebase save
+      saveLocalData({
+        ...latestData,
+        meta: nextMeta,
+      })
     } catch (error) {
       console.warn('Failed to save meta to Firebase, saving locally:', error)
       saveLocalData({
-        invoices,
-        customers,
-        products,
-        purchases,
-        settings,
+        ...latestData,
         meta: nextMeta,
-        activity,
       })
     }
   }
@@ -337,27 +735,44 @@ export const DataProvider = ({ children }) => {
         action: message,
         date: new Date().toISOString().slice(0, 10),
       }
+    
+    // Mark this activity as recently added to prevent Firebase listener from overwriting it
+    recentActivityIdsRef.current.add(entry.id)
+    // Clear the flag after 5 seconds
+    setTimeout(() => {
+      recentActivityIdsRef.current.delete(entry.id)
+    }, 5000)
+    
+    // Update state first
+    let updatedActivity = null
     setActivity((prev) => {
-      const updated = [entry, ...prev].slice(0, 20)
-      // Save to localStorage immediately
-      saveLocalData({
-        invoices,
-        customers,
-        products,
-        purchases,
-        settings,
-        meta,
-        activity: updated,
-      })
-      return updated
+      updatedActivity = [entry, ...prev].slice(0, 20)
+      return updatedActivity
     })
     
-    // Sync to Firebase if online
+    // Save to localStorage immediately with updated activity
+    if (typeof window !== 'undefined') {
+      const latestData = loadLocalData() || {}
+      saveLocalData({
+        invoices: latestData.invoices || invoices,
+        customers: latestData.customers || customers,
+        products: latestData.products || products,
+        purchases: latestData.purchases || purchases,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: updatedActivity || [entry],
+      })
+    }
+    
+    // Sync to Firebase if online - do this immediately
     if (firebaseReady && online && db) {
       try {
+        // Save individual activity entry to Firebase
         await set(ref(db, `activity/${entry.id}`), entry)
+        console.log('Activity synced to Firebase:', entry.action)
       } catch (error) {
         console.warn('Failed to save activity to Firebase:', error)
+        // If Firebase fails, the activity is still saved locally
       }
     }
   }, [firebaseReady, online, db, invoices, customers, products, purchases, settings, meta])
@@ -372,7 +787,7 @@ export const DataProvider = ({ children }) => {
   }
 
   const syncPendingInvoices = useCallback(async () => {
-    if (!firebaseReady || !online) return
+    if (!firebaseReady || !online || !db) return
     
     const currentPending = pendingInvoices
     if (currentPending.length === 0) return
@@ -400,48 +815,74 @@ export const DataProvider = ({ children }) => {
 
   // Auto-sync pending invoices when coming back online
   useEffect(() => {
-    if (online && firebaseReady && pendingInvoices.length > 0 && !syncing) {
+    if (online && firebaseReady && db && pendingInvoices.length > 0 && !syncing) {
       const timer = setTimeout(() => syncPendingInvoices(), 1000)
       return () => clearTimeout(timer)
     }
-  }, [online, firebaseReady, pendingInvoices.length, syncPendingInvoices, syncing])
+  }, [online, firebaseReady, db, pendingInvoices.length, syncPendingInvoices, syncing])
 
-  // Sync all data to Firebase when coming back online
+  // Listen for background sync messages from service worker and register background sync
   useEffect(() => {
-    if (!online || !firebaseReady || syncing) return
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
 
-    const syncAllData = async () => {
-      setSyncing(true)
-      try {
-        // Sync all data types to Firebase
-        await Promise.all([
-          set(ref(db, 'invoices'), invoices.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-          set(ref(db, 'customers'), customers.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-          set(ref(db, 'products'), products.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-          set(ref(db, 'purchases'), purchases.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-          set(ref(db, 'settings'), settings),
-          set(ref(db, 'meta'), meta),
-          set(ref(db, 'activity'), activity.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-        ])
-        console.log('All data synced to Firebase')
-      } catch (error) {
-        console.warn('Failed to sync all data to Firebase:', error)
-      } finally {
-        setSyncing(false)
+    const handleMessage = async (event) => {
+      if (event.data && event.data.type === 'SYNC_PENDING_INVOICES') {
+        // Service worker triggered background sync
+        if (online && firebaseReady && db && pendingInvoices.length > 0 && !syncing) {
+          await syncPendingInvoices()
+        }
       }
     }
 
-    if (invoices.length > 0 || customers.length > 0 || products.length > 0 || purchases.length > 0) {
-      const timer = setTimeout(syncAllData, 2000)
-      return () => clearTimeout(timer)
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+
+    // Register background sync when coming back online or when pending invoices exist
+    const registerBackgroundSync = async () => {
+      if (pendingInvoices.length > 0 && firebaseReady && 'serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready
+          if ('sync' in registration) {
+            await registration.sync.register('sync-pending-invoices')
+          }
+        } catch (error) {
+          // Background sync not supported or registration failed
+          console.warn('Background sync registration failed:', error)
+        }
+      }
     }
-  }, [online, firebaseReady, syncing, db, invoices, customers, products, purchases, settings, meta, activity])
+
+    const handleOnline = () => {
+      registerBackgroundSync()
+    }
+
+    window.addEventListener('online', handleOnline)
+    
+    // Register immediately if online and has pending
+    if (online && pendingInvoices.length > 0) {
+      registerBackgroundSync()
+    }
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [online, firebaseReady, db, pendingInvoices.length, syncPendingInvoices, syncing])
+
+  // Sync all data to Firebase when coming back online - REMOVED: This was causing data loss
+  // Individual sync operations handle their own Firebase updates
+  // The bindList listeners will sync data automatically when Firebase is available
 
   const upsertInvoice = useCallback(async (form, status = 'draft') => {
-    const seq = (meta?.invoiceSequence || 0) + 1
-    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, new Date(form.date), settings.invoicePrefix)
+    // Get latest meta to avoid race conditions with invoice sequence
+    const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    const currentMeta = latestData.meta || meta
+    const seq = (currentMeta?.invoiceSequence || 0) + 1
+    // Safely parse date for invoice number generation
+    const invoiceDate = form.date ? new Date(form.date) : new Date()
+    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, isValid(invoiceDate) ? invoiceDate : new Date(), settings.invoicePrefix)
     const existingInvoice = form.id ? invoices.find((inv) => inv.id === form.id) : null
-    let nextProducts = products
+    // Use latest products to avoid stale inventory data
+    let nextProducts = latestData.products || products
     
     // Extract customer data properly
     const customerState = form.customer?.state || settings.companyState
@@ -480,9 +921,32 @@ export const DataProvider = ({ children }) => {
       inventoryAdjusted = true
     }
 
+    // Update products state if inventory was adjusted
     if (nextProducts !== products) {
-      setProducts(nextProducts)
+      setProducts((prevProducts) => {
+        // Ensure we're working with the latest products
+        const latestProducts = loadLocalData()?.products || prevProducts
+        // Merge inventory changes properly
+        const productMap = new Map(latestProducts.map(p => [p.id, p]))
+        nextProducts.forEach(updatedProduct => {
+          productMap.set(updatedProduct.id, updatedProduct)
+        })
+        return Array.from(productMap.values())
+      })
     }
+
+    // Check for optimistic locking conflict if editing
+    if (existingInvoice) {
+      const currentVersion = existingInvoice.version || 0
+      const providedVersion = form.version
+      if (providedVersion !== undefined && providedVersion !== currentVersion) {
+        throw new Error('CONFLICT: Invoice was modified by another user. Please refresh and try again.')
+      }
+    }
+
+    // Encrypt sensitive customer fields before saving
+    const encryptedAadhaar = customerAadhaar ? encryptCustomerFields({ aadhaar: customerAadhaar }).aadhaar : ''
+    const encryptedDob = customerDob ? encryptCustomerFields({ dob: customerDob }).dob : ''
 
     const invoice = {
       id: form.id || nanoid(),
@@ -496,8 +960,8 @@ export const DataProvider = ({ children }) => {
       phone: customerPhone,
       gstin: customerGstin,
       address: customerAddress,
-      aadhaar: customerAadhaar,
-      dob: customerDob,
+      aadhaar: encryptedAadhaar,
+      dob: encryptedDob,
       place_of_supply: customerState,
       state: customerState,
       items: rows,
@@ -505,59 +969,109 @@ export const DataProvider = ({ children }) => {
       status,
       notes: form.notes || '',
       reverseCharge: form.reverseCharge || false,
+      customerSignature: form.customerSignature || '',
       amountPaid: form.amountPaid || 0,
       discountAmount: totalsWithDiscount.discount || 0,
+      version: (existingInvoice?.version || 0) + 1, // Increment version for optimistic locking
       synced: firebaseReady,
       createdAt: form.createdAt || Date.now(),
+      _lastModified: Date.now(), // Track when this was last modified locally
       inventoryAdjusted,
     }
 
+    // Decrypt invoice customer fields for state (invoice has encrypted fields for storage)
+    const decryptedInvoice = {
+      ...invoice,
+      aadhaar: invoice.aadhaar ? (() => {
+        try {
+          return decryptCustomerFields({ aadhaar: invoice.aadhaar }).aadhaar
+        } catch {
+          return invoice.aadhaar // Already decrypted or failed
+        }
+      })() : invoice.aadhaar,
+      dob: invoice.dob ? (() => {
+        try {
+          return decryptCustomerFields({ dob: invoice.dob }).dob
+        } catch {
+          return invoice.dob // Already decrypted or failed
+        }
+      })() : invoice.dob,
+    }
+    
+    // Update local state immediately - ensure it's at the top of the list
     setInvoices((prev) => {
       const filtered = prev.filter((inv) => inv.id !== invoice.id)
-      return [invoice, ...filtered].sort((a, b) => new Date(b.date) - new Date(a.date))
+      // Put new invoice at the top (newest first by date, but recent additions first)
+      const updated = [decryptedInvoice, ...filtered]
+      // Sort by date descending, but keep very recent additions at top
+      const now = Date.now()
+      return updated.sort((a, b) => {
+        // If one is very recent (within 5 seconds), prioritize it
+        const aRecent = a._lastModified && (now - a._lastModified < 5000)
+        const bRecent = b._lastModified && (now - b._lastModified < 5000)
+        if (aRecent && !bRecent) return -1
+        if (!aRecent && bRecent) return 1
+        // Otherwise sort by date
+        return new Date(b.date) - new Date(a.date)
+      })
     })
 
     pushActivity(`${invoice.invoiceNo} saved as ${status}`)
 
-    let metaSnapshot = meta
+    // Update meta atomically to prevent race conditions
+    let metaSnapshot = currentMeta
     if (!form.id) {
-      const nextMeta = { ...meta, invoiceSequence: seq }
+      const nextMeta = { ...currentMeta, invoiceSequence: seq }
       metaSnapshot = nextMeta
-      persistMeta(nextMeta)
+      // Persist meta immediately before saving invoice
+      await persistMeta(nextMeta)
     }
 
-    const invoicesForPersistence = [invoice, ...invoices.filter((inv) => inv.id !== invoice.id)]
+    // Use latest data for persistence
+    const finalLatestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    const finalProducts = finalLatestData.products || nextProducts
+    
+    // Encrypt invoice customer fields before saving
+    const encryptedInvoiceForStorage = {
+      ...invoice,
+      // Keep encrypted versions (already encrypted above)
+    }
+    
+    const invoicesForPersistence = [encryptedInvoiceForStorage, ...(finalLatestData.invoices || []).filter((inv) => inv.id !== invoice.id)]
 
-    // Save to localStorage immediately
+    // Save to localStorage immediately with encrypted data
     saveLocalData({
       invoices: invoicesForPersistence,
-      customers,
-      products: nextProducts,
-      purchases,
-      settings,
+      customers: finalLatestData.customers || customers,
+      products: finalProducts,
+      purchases: finalLatestData.purchases || purchases,
+      settings: finalLatestData.settings || settings,
       meta: metaSnapshot,
-      activity,
+      activity: finalLatestData.activity || activity,
     })
 
-    // Sync to Firebase if online
-    if (firebaseReady && online) {
+    // Sync to Firebase if online (with encrypted invoice)
+    if (firebaseReady && online && db) {
       try {
-        await set(ref(db, `invoices/${invoice.id}`), invoice)
+        await set(ref(db, `invoices/${invoice.id}`), encryptedInvoiceForStorage)
       } catch (error) {
-        enqueueInvoice(invoice)
+        enqueueInvoice(encryptedInvoiceForStorage)
         console.warn('Invoice saved locally; sync pending', error)
       }
     } else {
-      enqueueInvoice(invoice)
+      enqueueInvoice(encryptedInvoiceForStorage)
     }
-    return invoice
+    
+    return decryptedInvoice // Return decrypted version for component use
   }, [meta, settings, firebaseReady, online, db, invoices, customers, products, purchases, activity])
 
   const markInvoiceStatus = useCallback(async (invoiceId, status) => {
     const existing = invoices.find((inv) => inv.id === invoiceId)
     if (!existing) return
 
-    let nextProducts = products
+    // Get latest products to avoid stale inventory data
+    const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    let nextProducts = latestData.products || products
     let nextInventoryAdjusted = existing.inventoryAdjusted || false
     const requiresInventory = shouldAutoAdjustInventory(settings.stockUpdateMode, status)
 
@@ -569,8 +1083,18 @@ export const DataProvider = ({ children }) => {
       nextInventoryAdjusted = true
     }
 
+    // Update products state atomically
     if (nextProducts !== products) {
-      setProducts(nextProducts)
+      setProducts((prevProducts) => {
+        // Ensure we're working with the latest products
+        const currentProducts = loadLocalData()?.products || prevProducts
+        // Merge inventory changes properly
+        const productMap = new Map(currentProducts.map(p => [p.id, p]))
+        nextProducts.forEach(updatedProduct => {
+          productMap.set(updatedProduct.id, updatedProduct)
+        })
+        return Array.from(productMap.values())
+      })
     }
 
     const amountPaid = status === 'paid' ? (existing.totals?.grandTotal || 0) : existing.amountPaid || 0
@@ -582,32 +1106,57 @@ export const DataProvider = ({ children }) => {
         status,
         amountPaid,
         inventoryAdjusted: nextInventoryAdjusted,
+        version: (inv.version || 0) + 1, // Increment version
       }
     })
 
     setInvoices(updatedInvoices)
-
-    // Save to localStorage immediately
-    saveLocalData({
-      invoices: updatedInvoices,
-      customers,
-      products: nextProducts,
-      purchases,
-      settings,
-      meta,
-      activity,
+    
+    // Push activity first, then save with updated activity
+    pushActivity(`${existing.invoiceNo || invoiceId} marked ${status}`)
+    
+    // Save to localStorage immediately with latest state (reuse latestData from above)
+    const finalData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    // Encrypt invoices before saving to localStorage (invoices in state are decrypted)
+    const encryptedInvoices = updatedInvoices.map(inv => {
+      if (inv.aadhaar || inv.dob) {
+        return {
+          ...inv,
+          aadhaar: inv.aadhaar ? encryptCustomerFields({ aadhaar: inv.aadhaar }).aadhaar : inv.aadhaar,
+          dob: inv.dob ? encryptCustomerFields({ dob: inv.dob }).dob : inv.dob,
+        }
+      }
+      return inv
     })
     
-    pushActivity(`${invoiceId} marked ${status}`)
+    saveLocalData({
+      invoices: encryptedInvoices, // Save encrypted to localStorage
+      customers: finalData.customers || customers,
+      products: nextProducts,
+      purchases: finalData.purchases || purchases,
+      settings: finalData.settings || settings,
+      meta: finalData.meta || meta,
+      activity: finalData.activity || activity,
+    })
 
     // Sync to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
+        const existingInvoice = updatedInvoices.find(inv => inv.id === invoiceId)
+        if (existingInvoice) {
+          // Encrypt customer fields before saving to Firebase
+          const encryptedInvoice = {
+            ...existingInvoice,
+            aadhaar: existingInvoice.aadhaar ? encryptCustomerFields({ aadhaar: existingInvoice.aadhaar }).aadhaar : existingInvoice.aadhaar,
+            dob: existingInvoice.dob ? encryptCustomerFields({ dob: existingInvoice.dob }).dob : existingInvoice.dob,
+          }
         await update(ref(db, `invoices/${invoiceId}`), {
           status,
           amountPaid,
           inventoryAdjusted: nextInventoryAdjusted,
+            version: encryptedInvoice.version,
         })
+        }
       } catch (error) {
         console.warn('Failed to update invoice status in Firebase, saved locally:', error)
       }
@@ -616,33 +1165,56 @@ export const DataProvider = ({ children }) => {
 
   const deleteInvoice = useCallback(async (invoiceId) => {
     const targetInvoice = invoices.find((inv) => inv.id === invoiceId)
-    let nextProducts = products
+    const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
+    let nextProducts = latestData.products || products
+    
     if (targetInvoice?.inventoryAdjusted && targetInvoice.items?.length) {
       nextProducts = adjustProductsFromItems(nextProducts, targetInvoice.items, 1)
       if (nextProducts !== products) {
-        setProducts(nextProducts)
+        setProducts((prevProducts) => {
+          const currentProducts = loadLocalData()?.products || prevProducts
+          const productMap = new Map(currentProducts.map(p => [p.id, p]))
+          nextProducts.forEach(updatedProduct => {
+            productMap.set(updatedProduct.id, updatedProduct)
+          })
+          return Array.from(productMap.values())
+        })
       }
     }
 
     setInvoices((prev) => {
       const updated = prev.filter((inv) => inv.id !== invoiceId)
-      // Save to localStorage immediately
-      saveLocalData({
-        invoices: updated,
-        customers,
-        products: nextProducts,
-        purchases,
-        settings,
-        meta,
-        activity,
+      
+      // Encrypt invoices before saving to localStorage (invoices in state are decrypted)
+      const encryptedInvoices = updated.map(inv => {
+        if (inv.aadhaar || inv.dob) {
+          return {
+            ...inv,
+            aadhaar: inv.aadhaar ? encryptCustomerFields({ aadhaar: inv.aadhaar }).aadhaar : inv.aadhaar,
+            dob: inv.dob ? encryptCustomerFields({ dob: inv.dob }).dob : inv.dob,
+          }
+        }
+        return inv
       })
-      return updated
+      
+      // Save to localStorage immediately with latest state
+      const currentLatestData = loadLocalData() || { invoices: prev, customers, products, purchases, settings, meta, activity }
+      saveLocalData({
+        invoices: encryptedInvoices, // Save encrypted to localStorage
+        customers: currentLatestData.customers || customers,
+        products: nextProducts,
+        purchases: currentLatestData.purchases || purchases,
+        settings: currentLatestData.settings || settings,
+        meta: currentLatestData.meta || meta,
+        activity: currentLatestData.activity || activity,
+      })
+      return updated // Return decrypted for state
     })
     
-    pushActivity(`${invoiceId} deleted`)
+    pushActivity(`${targetInvoice?.invoiceNo || invoiceId} deleted`)
     
     // Sync to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
         await remove(ref(db, `invoices/${invoiceId}`))
       } catch (error) {
@@ -652,63 +1224,80 @@ export const DataProvider = ({ children }) => {
   }, [firebaseReady, online, db, invoices, customers, products, purchases, settings, meta, activity])
 
   const upsertCustomer = useCallback(async (customer) => {
-    const next = { 
-      ...customer, 
+    // Encrypt sensitive fields before saving to Firebase/localStorage
+    const encryptedCustomer = encryptCustomerFields(customer)
+    
+    const nextEncrypted = { 
+      ...encryptedCustomer, 
       id: customer.id || nanoid(),
       totalPurchase: customer.totalPurchase || 0,
+      _lastModified: Date.now(), // Track when this was last modified locally
     }
     
-    // Update local state immediately
+    // Create decrypted version for React state (for display)
+    const nextDecrypted = decryptCustomerFields(nextEncrypted)
+    
+    // Update local state immediately with DECRYPTED version (for display)
     setCustomers((prev) => {
-      const filtered = prev.filter((c) => c.id !== next.id)
-      const updated = [next, ...filtered]
-      // Save to localStorage immediately
+      const filtered = prev.filter((c) => c.id !== nextDecrypted.id)
+      const updated = [nextDecrypted, ...filtered]
+      // Save to localStorage with ENCRYPTED version (for storage)
+      const latestData = loadLocalData() || { invoices, customers: prev, products, purchases, settings, meta, activity }
+      // Convert decrypted state back to encrypted for storage
+      const encryptedForStorage = updated.map(c => encryptCustomerFields(c))
       saveLocalData({
-        invoices,
-        customers: updated,
-        products,
-        purchases,
-        settings,
-        meta,
-        activity,
+        invoices: latestData.invoices || invoices,
+        customers: encryptedForStorage, // Save encrypted to localStorage
+        products: latestData.products || products,
+        purchases: latestData.purchases || purchases,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: latestData.activity || activity,
       })
-      return updated
+      return updated // Return decrypted for state
     })
     
-    pushActivity(`Customer "${next.name}" ${customer.id ? 'updated' : 'added'}`)
+    pushActivity(`Customer "${nextDecrypted.name}" ${customer.id ? 'updated' : 'added'}`)
     
-    // Save to Firebase if online
-    if (firebaseReady && online) {
+    // Save to Firebase if online (with ENCRYPTED version)
+    if (firebaseReady && online && db) {
       try {
-        await set(ref(db, `customers/${next.id}`), next)
+        await set(ref(db, `customers/${nextEncrypted.id}`), nextEncrypted)
       } catch (error) {
         console.warn('Failed to save customer to Firebase, saved locally:', error)
       }
     }
     
-    return next
+    return nextDecrypted // Return decrypted version for component use
   }, [firebaseReady, online, db, invoices, products, purchases, settings, meta, activity])
 
   const upsertProduct = useCallback(async (product) => {
-    const next = { ...product, id: product.id || nanoid() }
+    const next = { 
+      ...product, 
+      id: product.id || nanoid(),
+      _lastModified: Date.now(), // Track when this was last modified locally
+    }
     setProducts((prev) => {
       const filtered = prev.filter((p) => p.id !== next.id)
       const updated = [next, ...filtered]
-      // Save to localStorage immediately
+      // Save to localStorage immediately with latest state
+      const latestData = loadLocalData() || { invoices, customers: prev, products: prev, purchases, settings, meta, activity }
       saveLocalData({
-        invoices,
-        customers,
+        invoices: latestData.invoices || invoices,
+        customers: latestData.customers || customers,
         products: updated,
-        purchases,
-        settings,
-        meta,
-        activity,
+        purchases: latestData.purchases || purchases,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: latestData.activity || activity,
       })
       return updated
     })
     
+    pushActivity(`Product "${next.name}" ${product.id ? 'updated' : 'added'}`)
+    
     // Save to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
     await set(ref(db, `products/${next.id}`), next)
       } catch (error) {
@@ -722,23 +1311,26 @@ export const DataProvider = ({ children }) => {
   const deleteCustomer = useCallback(async (customerId) => {
     setCustomers((prev) => {
       const updated = prev.filter((c) => c.id !== customerId)
-      // Save to localStorage immediately
+      // Save to localStorage immediately with latest state
+      const latestData = loadLocalData() || { invoices, customers: prev, products, purchases, settings, meta, activity }
+      // Encrypt customers before saving to localStorage (customers in state are decrypted)
+      const encryptedCustomers = updated.map(c => encryptCustomerFields(c))
       saveLocalData({
-        invoices,
-        customers: updated,
-        products,
-        purchases,
-        settings,
-        meta,
-        activity,
+        invoices: latestData.invoices || invoices,
+        customers: encryptedCustomers, // Save encrypted to localStorage
+        products: latestData.products || products,
+        purchases: latestData.purchases || purchases,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: latestData.activity || activity,
       })
-      return updated
+      return updated // Return decrypted for state
     })
     
     pushActivity(`Customer deleted`)
     
     // Sync to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
         await remove(ref(db, `customers/${customerId}`))
       } catch (error) {
@@ -750,15 +1342,16 @@ export const DataProvider = ({ children }) => {
   const deleteProduct = useCallback(async (productId) => {
     setProducts((prev) => {
       const updated = prev.filter((p) => p.id !== productId)
-      // Save to localStorage immediately
+      // Save to localStorage immediately with latest state
+      const latestData = loadLocalData() || { invoices, customers, products: prev, purchases, settings, meta, activity }
       saveLocalData({
-        invoices,
-        customers,
+        invoices: latestData.invoices || invoices,
+        customers: latestData.customers || customers,
         products: updated,
-        purchases,
-        settings,
-        meta,
-        activity,
+        purchases: latestData.purchases || purchases,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: latestData.activity || activity,
       })
       return updated
     })
@@ -766,7 +1359,7 @@ export const DataProvider = ({ children }) => {
     pushActivity(`Product deleted`)
     
     // Sync to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
         await remove(ref(db, `products/${productId}`))
       } catch (error) {
@@ -776,24 +1369,32 @@ export const DataProvider = ({ children }) => {
   }, [firebaseReady, online, db, invoices, customers, purchases, settings, meta, activity])
 
   const savePurchase = useCallback(async (purchase) => {
-    const next = { ...purchase, id: purchase.id || nanoid() }
+    const next = { 
+      ...purchase, 
+      id: purchase.id || nanoid(),
+      _lastModified: Date.now(),
+    }
     setPurchases((prev) => {
-      const updated = [next, ...prev]
-      // Save to localStorage immediately
+      const filtered = prev.filter((p) => p.id !== next.id)
+      const updated = [next, ...filtered]
+      // Save to localStorage immediately with latest state
+      const latestData = loadLocalData() || { invoices, customers, products, purchases: prev, settings, meta, activity }
       saveLocalData({
-        invoices,
-        customers,
-        products,
+        invoices: latestData.invoices || invoices,
+        customers: latestData.customers || customers,
+        products: latestData.products || products,
         purchases: updated,
-        settings,
-        meta,
-        activity,
+        settings: latestData.settings || settings,
+        meta: latestData.meta || meta,
+        activity: latestData.activity || activity,
       })
       return updated
     })
     
+    pushActivity(`Purchase saved`)
+    
     // Save to Firebase if online
-    if (firebaseReady && online) {
+    if (firebaseReady && online && db) {
       try {
     await set(ref(db, `purchases/${next.id}`), next)
       } catch (error) {
@@ -814,14 +1415,47 @@ export const DataProvider = ({ children }) => {
   }), [invoices, customers, products, purchases, meta, settings])
 
   const restoreBackup = useCallback(async (payload) => {
+    // Decrypt customers when restoring (if they were encrypted in backup)
+    const decryptedCustomers = (payload.customers || []).map(c => {
+      // Check if already decrypted (backward compatibility)
+      try {
+        return decryptCustomerFields(c)
+      } catch {
+        return c // Return as-is if decryption fails
+      }
+    })
+    
+    // Initialize invoice versions for backward compatibility
+    const invoicesWithVersion = (payload.invoices || []).map(inv => ({
+      ...inv,
+      version: inv.version || 0,
+      // Decrypt customer fields in invoices
+      aadhaar: inv.aadhaar ? (() => {
+        try {
+          return decryptCustomerFields({ aadhaar: inv.aadhaar }).aadhaar
+        } catch {
+          return inv.aadhaar
+        }
+      })() : inv.aadhaar,
+      dob: inv.dob ? (() => {
+        try {
+          return decryptCustomerFields({ dob: inv.dob }).dob
+        } catch {
+          return inv.dob
+        }
+      })() : inv.dob,
+    }))
+
     const safe = {
-      invoices: payload.invoices || [],
-      customers: payload.customers || [],
+      invoices: invoicesWithVersion,
+      customers: decryptedCustomers,
       products: payload.products || [],
       purchases: payload.purchases || [],
       meta: payload.meta || meta,
       settings: payload.settings || settings,
     }
+    
+    // Update state with decrypted customers
     setInvoices(safe.invoices)
     setCustomers(safe.customers)
     setProducts(safe.products)
@@ -829,17 +1463,42 @@ export const DataProvider = ({ children }) => {
     setMeta(safe.meta)
     setSettings(safe.settings)
 
-    if (firebaseReady) {
+    // Encrypt customers before saving to localStorage/Firebase
+    const encryptedCustomers = safe.customers.map(c => encryptCustomerFields(c))
+    const encryptedInvoices = safe.invoices.map(inv => ({
+      ...inv,
+      aadhaar: inv.aadhaar ? encryptCustomerFields({ aadhaar: inv.aadhaar }).aadhaar : inv.aadhaar,
+      dob: inv.dob ? encryptCustomerFields({ dob: inv.dob }).dob : inv.dob,
+    }))
+
+    // Save to localStorage with encrypted data
+    saveLocalData({
+      invoices: encryptedInvoices,
+      customers: encryptedCustomers,
+      products: safe.products,
+      purchases: safe.purchases,
+      settings: safe.settings,
+      meta: safe.meta,
+      activity: [],
+    })
+
+    // Save to Firebase with encrypted data (if online)
+    if (firebaseReady && online && db) {
+      try {
       await Promise.all([
-        set(ref(db, 'invoices'), safe.invoices.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
-        set(ref(db, 'customers'), safe.customers.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
+          set(ref(db, 'invoices'), encryptedInvoices.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
+          set(ref(db, 'customers'), encryptedCustomers.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
         set(ref(db, 'products'), safe.products.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
         set(ref(db, 'purchases'), safe.purchases.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {})),
         set(ref(db, 'meta'), safe.meta),
       ])
+      } catch (error) {
+        console.warn('Failed to restore backup to Firebase:', error)
     }
+    }
+    
     pushActivity('Backup restored')
-  }, [firebaseReady, db, meta, settings])
+  }, [firebaseReady, online, db, meta, settings])
 
   const value = useMemo(
     () => ({
@@ -868,19 +1527,20 @@ export const DataProvider = ({ children }) => {
         const merged = { ...settings, ...nextSettings }
         setSettings(merged)
         
-        // Save to localStorage immediately
+        // Save to localStorage immediately with latest state
+        const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
         saveLocalData({
-          invoices,
-          customers,
-          products,
-          purchases,
+          invoices: latestData.invoices || invoices,
+          customers: latestData.customers || customers,
+          products: latestData.products || products,
+          purchases: latestData.purchases || purchases,
           settings: merged,
-          meta,
-          activity,
+          meta: latestData.meta || meta,
+          activity: latestData.activity || activity,
         })
         
         // Sync to Firebase if online
-        if (firebaseReady && online) {
+        if (firebaseReady && online && db) {
           try {
             await set(ref(db, 'settings'), merged)
           } catch (error) {

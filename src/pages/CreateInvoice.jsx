@@ -8,6 +8,7 @@ import WhatsAppShare from '../components/WhatsAppShare'
 import PrintInvoice from '../components/PrintInvoice'
 import InvoicePreview from '../components/InvoicePreview'
 import PageHeader from '../components/PageHeader'
+import SignaturePad from '../components/SignaturePad'
 import { calculateInvoiceTotals, formatCurrency } from '../lib/taxUtils'
 
 const blankItem = {
@@ -20,7 +21,7 @@ const blankItem = {
 }
 
 export default function CreateInvoice() {
-  const { customers, products, settings, saveInvoice, invoices, upsertCustomer } = useData()
+  const { customers, products, settings, saveInvoice, invoices, upsertCustomer, updateSettings } = useData()
   const toast = useToast()
   const navigate = useNavigate()
   const { invoiceId } = useParams()
@@ -30,6 +31,7 @@ export default function CreateInvoice() {
   const [items, setItems] = useState([blankItem])
   const [notes, setNotes] = useState('Thanks for your business.')
   const [reverseCharge, setReverseCharge] = useState(false)
+  const [customerSignature, setCustomerSignature] = useState('')
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [terms, setTerms] = useState('Due on Receipt')
   const [dueDate, setDueDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -40,22 +42,58 @@ export default function CreateInvoice() {
   const [customerSearch, setCustomerSearch] = useState('')
   const [showProductSuggestions, setShowProductSuggestions] = useState(false)
   const [productSuggestions, setProductSuggestions] = useState([])
-  const [productSearch, setProductSearch] = useState('')
   const [activeItemIndex, setActiveItemIndex] = useState(null)
   const [customerPhoneOverride, setCustomerPhoneOverride] = useState('')
+  const [taxEnabled, setTaxEnabled] = useState(true)
   const selectedCustomer = customerId ? customers.find((c) => c.id === customerId) : null
+  
+  // Pull to refresh state (for UI indicator)
+  const [pullToRefresh] = useState({ 
+    isPulling: false, 
+    startY: 0, 
+    distance: 0, 
+    isRefreshing: false 
+  })
+
+  // Toggle tax on/off
+  const toggleTax = useCallback(() => {
+    setTaxEnabled((prev) => {
+      const newTaxEnabled = !prev
+      if (newTaxEnabled) {
+        // Tax ON: restore original tax percentages or set to default 18%
+        setItems((prevItems) =>
+          prevItems.map((item) => ({
+            ...item,
+            taxPercent: item.taxPercent === 0 ? 18 : item.taxPercent || 18,
+          }))
+        )
+      } else {
+        // Tax OFF: set all tax percentages to 0
+        setItems((prevItems) =>
+          prevItems.map((item) => ({
+            ...item,
+            taxPercent: 0,
+          }))
+        )
+      }
+      return newTaxEnabled
+    })
+  }, [])
+  // Sync customer phone when customer changes
   useEffect(() => {
     if (selectedCustomer) {
       setCustomerPhoneOverride(selectedCustomer.phone || '')
     } else {
       setCustomerPhoneOverride('')
     }
+     
   }, [selectedCustomer])
 
-  // Update customerId when customers list changes (e.g., after adding a new customer)
-  // Calculate due date based on terms
+  // Calculate due date based on terms (derived state)
   useEffect(() => {
+    if (!date) return // Don't calculate if date is not set
     const invoiceDate = new Date(date)
+    if (isNaN(invoiceDate.getTime())) return // Don't calculate if date is invalid
     let daysToAdd = 0
     
     switch (terms) {
@@ -83,7 +121,8 @@ export default function CreateInvoice() {
     if (newDueDate !== dueDate) {
       setDueDate(newDueDate)
     }
-  }, [date, terms, dueDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, terms])
 
   useEffect(() => {
     if (!editingInvoice) {
@@ -128,11 +167,36 @@ export default function CreateInvoice() {
     setItems(editingInvoice.items || [blankItem])
     setNotes(editingInvoice.notes || 'Thanks for your business.')
     setReverseCharge(Boolean(editingInvoice.reverseCharge))
-    setDate(editingInvoice.date || format(new Date(), 'yyyy-MM-dd'))
+    setCustomerSignature(editingInvoice.customerSignature || '')
+    
+    // Validate and set date - ensure it's a valid date string
+    const invoiceDate = editingInvoice.date
+    let validDate = format(new Date(), 'yyyy-MM-dd')
+    if (invoiceDate) {
+      const testDate = new Date(invoiceDate)
+      if (!isNaN(testDate.getTime())) {
+        validDate = format(testDate, 'yyyy-MM-dd')
+      }
+    }
+    setDate(validDate)
+    
     setTerms(editingInvoice.terms || 'Due on Receipt')
-    setDueDate(editingInvoice.dueDate || format(new Date(), 'yyyy-MM-dd'))
+    
+    // Validate and set due date
+    const invoiceDueDate = editingInvoice.dueDate
+    let validDueDate = format(new Date(), 'yyyy-MM-dd')
+    if (invoiceDueDate) {
+      const testDueDate = new Date(invoiceDueDate)
+      if (!isNaN(testDueDate.getTime())) {
+        validDueDate = format(testDueDate, 'yyyy-MM-dd')
+      }
+    }
+    setDueDate(validDueDate)
     setAmountPaid(editingInvoice.amountPaid || 0)
     setDiscountAmount(editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0)
+    // Set tax enabled based on whether any items have tax
+    const hasTax = editingInvoice.items?.some(item => item.taxPercent > 0) ?? true
+    setTaxEnabled(hasTax)
   }, [editingInvoice, customers, settings.companyState])
 
   const derived = useMemo(
@@ -145,6 +209,7 @@ export default function CreateInvoice() {
     [items, selectedCustomer, customCustomer, settings],
   )
 
+  // Ensure discount doesn't exceed total (derived state validation)
   useEffect(() => {
     setDiscountAmount((prev) => {
       const baseTotal = derived.totals.grandTotal
@@ -153,6 +218,7 @@ export default function CreateInvoice() {
       }
       return prev
     })
+     
   }, [derived.totals.grandTotal])
 
   const discountValue = useMemo(() => {
@@ -192,8 +258,9 @@ export default function CreateInvoice() {
       notes: notes,
       reverseCharge: reverseCharge,
       amountPaid: Number(amountPaid) || 0,
+      customerSignature: customerSignature,
     }),
-    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid],
+    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid, customerSignature],
   )
 
   const updateItem = useCallback((index, field, value) => {
@@ -203,22 +270,6 @@ export default function CreateInvoice() {
   const addItem = useCallback(() => setItems((prev) => [...prev, blankItem]), [])
   const removeItem = useCallback((index) => setItems((prev) => prev.filter((_, idx) => idx !== index)), [])
 
-  const addProductToItems = (productId) => {
-    const product = products.find((p) => p.id === productId)
-    if (!product) return
-    setItems((prev) => [
-      ...prev,
-      {
-        productName: product.name,
-        description: product.name,
-        hsn: product.hsn,
-        qty: 1,
-        rate: product.unit_price,
-        taxPercent: product.tax_percent,
-        productId: product.id,
-      },
-    ])
-  }
 
   const handleSave = async (status) => {
     // Validation
@@ -317,21 +368,83 @@ export default function CreateInvoice() {
       reverseCharge,
       discountAmount: discountValue,
       amountPaid: finalAmountPaid,
+      customerSignature: customerSignature,
+      version: editingInvoice?.version, // Include version for optimistic locking
     }
     
     try {
       await saveInvoice(payload, finalStatus)
       const statusText = finalStatus === 'draft' ? 'saved as draft' : finalStatus === 'paid' ? 'saved and marked paid' : 'saved and marked sent'
       toast.success(`Invoice ${statusText}${customerData.id ? ` • Linked to ${customerData.name}` : ''}`)
-    navigate('/invoices')
+      // Wait for React state updates to propagate and ensure new invoice appears in list
+      // Use multiple frames to ensure all state updates complete
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          navigate('/invoices', { replace: false })
+        })
+      })
     } catch (error) {
       console.error('Error saving invoice:', error)
-      toast.error('Failed to save invoice. Please try again.')
+      if (error.message && error.message.includes('CONFLICT')) {
+        toast.error('Invoice was modified by another user. Refreshing...', { duration: 5000 })
+        // Refresh page to get latest version
+        setTimeout(() => window.location.reload(), 2000)
+      } else {
+        toast.error('Failed to save invoice. Please try again.')
+      }
     }
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 w-full md:max-w-7xl mx-auto">
+    <div className="space-y-4 sm:space-y-6 w-full md:max-w-7xl mx-auto relative">
+      {/* Pull to refresh indicator */}
+      {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
+        <div 
+          className="fixed top-4 left-1/2 z-50 md:hidden"
+          style={{ 
+            opacity: Math.min(pullToRefresh.distance / 40, 1),
+            transform: `translate(-50%, ${Math.max(0, pullToRefresh.distance - 40)}px)`,
+            transition: pullToRefresh.isRefreshing 
+              ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out' 
+              : 'none',
+            willChange: 'transform, opacity'
+          }}
+        >
+          <div 
+            className="bg-white rounded-full p-2 shadow-lg transition-all duration-200"
+            style={{
+              transform: `scale(${Math.min(1 + (pullToRefresh.distance / 200), 1.1)})`
+            }}
+          >
+            {pullToRefresh.isRefreshing ? (
+              <svg 
+                className="animate-spin h-6 w-6 text-blue-600" 
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24"
+                style={{ animation: 'spin 1s linear infinite' }}
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg 
+                className="h-6 w-6 text-blue-600"
+                style={{
+                  transform: `rotate(${Math.min(pullToRefresh.distance * 2.5, 180)}deg)`,
+                  transition: 'transform 0.15s ease-out'
+                }}
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <PageHeader
           title={editingInvoice ? 'Edit Invoice' : 'Create Invoice'}
@@ -441,11 +554,6 @@ export default function CreateInvoice() {
                   </button>
                 ))}
               </div>
-            )}
-            {customers.length === 0 && (
-              <p className="text-xs text-amber-600 mt-1">
-                  💡 Tip: Add customers from the Customers page first
-              </p>
             )}
             </div>
           </div>
@@ -608,83 +716,18 @@ export default function CreateInvoice() {
       <section className="glass-panel p-4 md:p-6 space-y-4 sm:space-y-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 pb-3 border-b border-gray-200">
           <h3 className="text-base font-semibold text-gray-900">Item Table</h3>
-          <div className="relative w-full max-w-xs sm:max-w-none sm:w-80 mx-auto sm:mx-0">
-            <input
-              type="text"
-              className="w-full text-sm sm:text-base py-2 sm:py-2.5"
-              placeholder="Search products to add..."
-              value={productSearch}
-              onChange={(e) => {
-                const value = e.target.value
-                setProductSearch(value)
-                setActiveItemIndex(null) // Clear active item index when using top search
-                
-                if (value.length >= 1) {
-                  const matches = products.filter(p => 
-                    p.name.toLowerCase().includes(value.toLowerCase()) ||
-                    p.sku?.toLowerCase().includes(value.toLowerCase()) ||
-                    p.hsn?.includes(value)
-                  ).slice(0, 8)
-                  setProductSuggestions(matches)
-                  setShowProductSuggestions(true)
-                } else {
-                  setShowProductSuggestions(false)
-                }
-              }}
-              onFocus={() => {
-                setActiveItemIndex(null) // Clear active item index when focusing top search
-                if (products.length > 0 && productSearch.length === 0) {
-                  setProductSuggestions(products.slice(0, 8))
-                  setShowProductSuggestions(true)
-                }
-              }}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (!document.activeElement?.closest('.product-suggestion-dropdown')) {
-                    setShowProductSuggestions(false)
-                  }
-                }, 250)
-              }}
-            />
-            {showProductSuggestions && productSuggestions.length > 0 && activeItemIndex === null && (
-              <div 
-                className="product-suggestion-dropdown absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-64 overflow-y-auto"
-                onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking dropdown
-              >
-                {productSuggestions.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      addProductToItems(product.id)
-                      setProductSearch('')
-                      setShowProductSuggestions(false)
-                    }}
-                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{product.name}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {product.sku && `SKU: ${product.sku} • `}
-                          ₹{product.unit_price} • Tax: {product.tax_percent}%
-                        </p>
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                        product.stock === 0 ? 'bg-red-100 text-red-700' :
-                        product.stock < 10 ? 'bg-orange-100 text-orange-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {product.stock} in stock
-                      </span>
-                    </div>
-                  </button>
-            ))}
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={toggleTax}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              taxEnabled
+                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${taxEnabled ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+            Tax {taxEnabled ? 'ON' : 'OFF'}
+          </button>
         </div>
         <div className="space-y-4 sm:space-y-5">
           {items.map((item, idx) => {
@@ -716,7 +759,6 @@ export default function CreateInvoice() {
                         onChange={(e) => {
                           const value = e.target.value
                           updateItem(idx, 'productName', value)
-                          setProductSearch('') // Clear top search when typing in item row
                           
                           if (value.length >= 1) {
                             const matches = products.filter(p => 
@@ -732,7 +774,6 @@ export default function CreateInvoice() {
                           }
                         }}
                         onFocus={() => {
-                          setProductSearch('') // Clear top search when focusing item row
                           setActiveItemIndex(idx)
                           if (item.productName && item.productName.length >= 1) {
                             const matches = products.filter(p => 
@@ -742,6 +783,10 @@ export default function CreateInvoice() {
                               setProductSuggestions(matches)
                               setShowProductSuggestions(true)
                             }
+                          } else {
+                            // Show all products when focusing empty field
+                            setProductSuggestions(products.slice(0, 6))
+                            setShowProductSuggestions(true)
                           }
                         }}
                         onBlur={() => {
@@ -813,7 +858,6 @@ export default function CreateInvoice() {
                     value={item.description}
                     onChange={(e) => updateItem(idx, 'description', e.target.value)}
                   />
-                  <p className="text-[10px] text-gray-500 mt-1">Use commas or Enter to add multiple lines (e.g., battery serial numbers).</p>
                 </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">HSN</label>
@@ -889,6 +933,55 @@ export default function CreateInvoice() {
             Reverse Charge Applicable
           </label>
         </div>
+        
+        {/* Signature Section */}
+        <div className="glass-panel p-4 md:p-6 space-y-4 overflow-visible">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Signatures</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full">
+            <div className="space-y-2 w-full">
+              <SignaturePad
+                label="Customer Signature"
+                value={customerSignature}
+                onChange={setCustomerSignature}
+                width={300}
+                height={150}
+                showClearButton={false}
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-gray-700">Company Signature</label>
+                {settings.companySignature && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await updateSettings({ companySignature: '' })
+                      toast.success('Company signature cleared')
+                    }}
+                    className="text-xs text-red-600 hover:text-red-700 whitespace-nowrap ml-2"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <SignaturePad
+                label=""
+                value={settings.companySignature || ''}
+                onChange={async (signature) => {
+                  await updateSettings({ companySignature: signature })
+                  if (signature) {
+                    toast.success('Company signature saved for all invoices')
+                  }
+                }}
+                width={300}
+                height={150}
+                showClearButton={false}
+              />
+              <p className="text-xs text-gray-500 mt-2">This signature will be used for all invoices</p>
+            </div>
+          </div>
+        </div>
+        
         <div className="border border-gray-200 rounded-lg p-4 bg-gradient-to-br from-gray-50 to-white">
           <h4 className="font-semibold mb-3 text-gray-900 text-base">Total ( ₹ )</h4>
           <div className="space-y-2 text-sm">

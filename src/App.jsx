@@ -1,20 +1,23 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { Suspense, lazy } from 'react'
 import Layout from './components/Layout'
 import LoginGate from './components/LoginGate'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './components/ToastContainer'
 import LoadingState from './components/LoadingState'
-import Dashboard from './pages/Dashboard'
-import CreateInvoice from './pages/CreateInvoice'
-import InvoiceList from './pages/InvoiceList'
-import Customers from './pages/Customers'
-import Products from './pages/Products'
-import GSTReport from './pages/GSTReport'
-import AgingReport from './pages/AgingReport'
-import BackupRestore from './pages/BackupRestore'
 import { DataProvider, useData } from './context/DataContext'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+
+// Lazy load heavy pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const CreateInvoice = lazy(() => import('./pages/CreateInvoice'))
+const InvoiceList = lazy(() => import('./pages/InvoiceList'))
+const Customers = lazy(() => import('./pages/Customers'))
+const Products = lazy(() => import('./pages/Products'))
+const GSTReport = lazy(() => import('./pages/GSTReport'))
+const AgingReport = lazy(() => import('./pages/AgingReport'))
+const BackupRestore = lazy(() => import('./pages/BackupRestore'))
 
 function RoutedApp() {
   const { loading, loadingProgress, firebaseReady } = useData()
@@ -23,6 +26,7 @@ function RoutedApp() {
     <>
       {loading && firebaseReady && <LoadingState progress={loadingProgress} />}
     <Layout>
+      <Suspense fallback={!loading ? <LoadingState progress={50} /> : null}>
       <Routes>
         <Route path="/" element={<ProtectedRoute pageKey="dashboard"><Dashboard /></ProtectedRoute>} />
         <Route path="/invoices" element={<ProtectedRoute pageKey="invoices"><InvoiceList /></ProtectedRoute>} />
@@ -35,6 +39,7 @@ function RoutedApp() {
         <Route path="/backup" element={<ProtectedRoute pageKey="settings"><BackupRestore /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Layout>
     </>
   )

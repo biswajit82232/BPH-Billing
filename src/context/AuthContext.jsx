@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { loadUsers, saveUsers, clearSessionUser, readSessionUser, writeSessionUser } from '../lib/storage'
 import { ref, onValue, set, off } from 'firebase/database'
 import { ensureFirebase, isFirebaseConfigured } from '../lib/firebase'
+import { hashPassword, verifyPassword } from '../lib/encryption'
 
 const AuthContext = createContext()
 
@@ -101,8 +102,67 @@ export const AuthProvider = ({ children }) => {
     }
   }, [online, users])
 
+  // Update user (declared before login to avoid circular dependency)
+  const updateUser = useCallback(async (userId, userData) => {
+    const updatedUsers = await Promise.all(users.map(async u => {
+      if (u.id === userId) {
+        // Check for duplicate username (excluding current user)
+        if (userData.username && users.some(u2 => u2.username === userData.username && u2.id !== userId)) {
+          return { ...u, error: 'Username already exists' }
+        }
+        
+        // Hash password if provided
+        const updateData = { ...userData }
+        if (updateData.password && updateData.password.trim() !== '') {
+          updateData.passwordHash = await hashPassword(updateData.password)
+          delete updateData.password // Remove plaintext password
+        } else {
+          delete updateData.password // Remove password field if empty
+        }
+        
+        // Remove old plaintext password field if migrating
+        if (updateData.passwordHash && u.password) {
+          delete u.password
+        }
+        
+        return {
+          ...u,
+          ...updateData,
+          updatedAt: new Date().toISOString(),
+        }
+      }
+      return u
+    }))
+    
+    // Check if there was a duplicate username error
+    const hasError = updatedUsers.some(u => u.error)
+    if (hasError) {
+      return { success: false, error: 'Username already exists' }
+    }
+    
+    setUsers(updatedUsers)
+    saveUsers(updatedUsers) // Save to localStorage immediately
+    
+    // Sync to Firebase if online
+    if (isFirebaseConfigured() && online) {
+      try {
+        const { db } = ensureFirebase()
+        if (db) {
+          const updatedUser = updatedUsers.find(u => u.id === userId)
+          if (updatedUser) {
+            await set(ref(db, `users/${userId}`), updatedUser)
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to update user in Firebase, saved locally:', error)
+      }
+    }
+    
+    return { success: true }
+  }, [users, online])
+
   // Login function
-  const login = useCallback((username, password) => {
+  const login = useCallback(async (username, password) => {
     // Trim whitespace from inputs
     const trimmedUsername = username.trim()
     const trimmedPassword = password.trim()
@@ -121,8 +181,23 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: 'User account is inactive. Please contact administrator.' }
     }
     
-    // Check password (exact match, case-sensitive)
-    if (user.password !== trimmedPassword) {
+    // Check password - support both hashed and plaintext (for backward compatibility)
+    let passwordMatches = false
+    if (user.passwordHash) {
+      // New hashed password
+      passwordMatches = await verifyPassword(trimmedPassword, user.passwordHash)
+    } else {
+      // Old plaintext password (backward compatibility)
+      // If password matches, hash it and update
+      if (user.password === trimmedPassword) {
+        passwordMatches = true
+        // Auto-upgrade to hashed password
+        const hashedPassword = await hashPassword(trimmedPassword)
+        await updateUser(user.id, { passwordHash: hashedPassword, password: null })
+      }
+    }
+    
+    if (!passwordMatches) {
       return { success: false, error: 'Invalid password' }
     }
     
@@ -130,7 +205,7 @@ export const AuthProvider = ({ children }) => {
     writeSessionUser(user.username)
     setCurrentUser(user.username)
     return { success: true, user }
-  }, [users])
+  }, [users, updateUser])
 
   // Logout function
   const logout = useCallback(() => {
@@ -153,10 +228,13 @@ export const AuthProvider = ({ children }) => {
 
   // Add new user
   const addUser = useCallback(async (userData) => {
+    // Hash password before storing
+    const passwordHash = await hashPassword(userData.password || '')
+    
     const newUser = {
       id: `user-${Date.now()}`,
       username: userData.username,
-      password: userData.password,
+      passwordHash, // Store hashed password
       name: userData.name || userData.username,
       active: userData.active !== undefined ? userData.active : true,
       permissions: userData.permissions || [],
@@ -187,56 +265,6 @@ export const AuthProvider = ({ children }) => {
     return { success: true, user: newUser }
   }, [users, online])
 
-  // Update user
-  const updateUser = useCallback(async (userId, userData) => {
-    const updatedUsers = users.map(u => {
-      if (u.id === userId) {
-        // Check for duplicate username (excluding current user)
-        if (userData.username && users.some(u2 => u2.username === userData.username && u2.id !== userId)) {
-          return { ...u, error: 'Username already exists' }
-        }
-        
-        // If password is empty, don't update it (keep existing)
-        const updateData = { ...userData }
-        if (!updateData.password || updateData.password.trim() === '') {
-          delete updateData.password
-        }
-        
-        return {
-          ...u,
-          ...updateData,
-          updatedAt: new Date().toISOString(),
-        }
-      }
-      return u
-    })
-    
-    // Check if there was a duplicate username error
-    const hasError = updatedUsers.some(u => u.error)
-    if (hasError) {
-      return { success: false, error: 'Username already exists' }
-    }
-    
-    setUsers(updatedUsers)
-    saveUsers(updatedUsers) // Save to localStorage immediately
-    
-    // Sync to Firebase if online
-    if (isFirebaseConfigured() && online) {
-      try {
-        const { db } = ensureFirebase()
-        if (db) {
-          const updatedUser = updatedUsers.find(u => u.id === userId)
-          if (updatedUser) {
-            await set(ref(db, `users/${userId}`), updatedUser)
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to update user in Firebase, saved locally:', error)
-      }
-    }
-    
-    return { success: true }
-  }, [users, online])
 
   // Delete user
   const deleteUser = useCallback(async (userId) => {
@@ -267,18 +295,27 @@ export const AuthProvider = ({ children }) => {
 
   const replaceUsers = useCallback(async (nextUsers = []) => {
     const timestamp = Date.now()
-    const mappedUsers = Array.isArray(nextUsers)
-      ? nextUsers.map((user, index) => ({
+    // Hash passwords for imported users if they're plaintext
+    const mappedUsers = await Promise.all(
+      (Array.isArray(nextUsers) ? nextUsers : []).map(async (user, index) => {
+        // If user has plaintext password, hash it
+        let passwordHash = user.passwordHash
+        if (user.password && !passwordHash) {
+          passwordHash = await hashPassword(user.password)
+        }
+        
+        return {
           id: user.id || `user-${timestamp}-${index}`,
           username: (user.username || '').trim(),
-          password: user.password,
+          passwordHash, // Store hashed password
           name: user.name || user.username || 'User',
           active: user.active !== undefined ? user.active : true,
           permissions: Array.isArray(user.permissions) ? user.permissions : [],
           createdAt: user.createdAt || new Date().toISOString(),
           updatedAt: user.updatedAt || null,
-        }))
-      : []
+        }
+      })
+    )
 
     const safeUsers = mappedUsers.filter((user) => user.username)
 

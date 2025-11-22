@@ -15,6 +15,14 @@ VITE_COMPANY_GSTIN=19AAHCB1234N1Z2
 VITE_COMPANY_STATE=West Bengal
 VITE_INVOICE_PREFIX=BPH
 
+# Encryption Key (Optional - defaults to a default key if not set)
+# Change this to a random string for better security
+VITE_ENCRYPTION_KEY=your-random-encryption-key-here
+
+# Sentry Error Tracking (Optional - for production error monitoring)
+# Get DSN from https://sentry.io
+VITE_SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
+
 # Instructions:
 # 1. Copy this file to .env.local in the root directory
 # 2. Replace all placeholder values with your actual Firebase config

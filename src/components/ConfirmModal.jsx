@@ -1,12 +1,28 @@
+import { useEffect } from 'react'
+
 export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Delete', cancelText = 'Cancel', type = 'danger' }) {
+  // Handle Escape key to close modal
+  useEffect(() => {
+    if (!isOpen) return
+    
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [isOpen, onClose])
+
   if (!isOpen) return null
 
   const buttonClass = type === 'danger' ? 'btn-danger' : 'btn-primary'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-gray-900 bg-opacity-50" onClick={onClose} />
+      <div className="absolute inset-0 bg-gray-900 bg-opacity-50" onClick={onClose} aria-hidden="true" />
       
       {/* Modal */}
       <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-scale-in">
@@ -25,7 +41,7 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title, messag
 
         {/* Content */}
         <div className="text-center mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+          <h3 id="modal-title" className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
           <p className="text-sm text-gray-600">{message}</p>
         </div>
 

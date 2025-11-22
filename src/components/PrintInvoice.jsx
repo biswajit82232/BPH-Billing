@@ -117,7 +117,7 @@ export default function PrintInvoice({ invoice, className = '', label = 'Print' 
       <button
         type="button"
         onClick={handlePrint}
-        className={`btn-secondary ${className}`}
+        className={className || 'btn-secondary'}
         disabled={printing}
         title="Print Invoice"
       >

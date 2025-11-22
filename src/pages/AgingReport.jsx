@@ -1,12 +1,135 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useData } from '../context/DataContext'
 import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/taxUtils'
-import { differenceInDays, parseISO, format } from 'date-fns'
+import { differenceInDays, parseISO, format, isValid } from 'date-fns'
 
 export default function AgingReport() {
   const { invoices, customers } = useData()
   const [selectedCustomer, setSelectedCustomer] = useState('all')
+  
+  // Pull to refresh state (unused in this component but kept for consistency)
+  const [_pullToRefresh, setPullToRefresh] = useState({ 
+    isPulling: false, 
+    startY: 0, 
+    distance: 0, 
+    isRefreshing: false 
+  })
+  const pullStartRef = useRef(null)
+
+  // Pull to refresh functionality (mobile only, upper 1/3)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    let currentDistance = 0
+    let rafId = null
+    
+    const handleTouchStart = (e) => {
+      if (window.innerWidth > 768) return
+      const touch = e.touches[0]
+      const startY = touch.clientY
+      const scrollY = window.scrollY || document.documentElement.scrollTop
+      
+      if (startY > window.innerHeight / 3) return
+      if (scrollY > 10) return
+      
+      pullStartRef.current = { startY, startScrollY: scrollY }
+      currentDistance = 0
+      setPullToRefresh({ isPulling: false, startY, distance: 0, isRefreshing: false })
+    }
+
+    const updatePullState = () => {
+      if (!pullStartRef.current) return
+      const distance = Math.min(currentDistance, 80)
+      setPullToRefresh(prev => ({
+        ...prev,
+        isPulling: currentDistance > 5,
+        distance: distance
+      }))
+    }
+
+    const handleTouchMove = (e) => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      const touch = e.touches[0]
+      const currentY = touch.clientY
+      const newDistance = Math.max(0, currentY - pullStartRef.current.startY)
+      
+      currentDistance = currentDistance + (newDistance - currentDistance) * 0.3
+      
+      if (currentDistance > 0 && currentDistance < 100) {
+        if (rafId) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => {
+          updatePullState()
+          if (currentDistance > 5 && currentDistance < 100) {
+            rafId = requestAnimationFrame(updatePullState)
+          }
+        })
+        
+        if (currentDistance > 10) e.preventDefault()
+      } else {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      
+      if (currentDistance > 60) {
+        setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
+        setTimeout(() => window.location.reload(), 300)
+      } else {
+        const startDistance = currentDistance
+        const startTime = performance.now()
+        const duration = 300
+        
+        const animateReturn = (currentTime) => {
+          const elapsed = currentTime - startTime
+          const progress = Math.min(elapsed / duration, 1)
+          const eased = 1 - Math.pow(1 - progress, 3)
+          
+          const newDistance = startDistance * (1 - eased)
+          setPullToRefresh(prev => ({ 
+            ...prev, 
+            isPulling: newDistance > 5, 
+            distance: newDistance 
+          }))
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateReturn)
+          } else {
+            setPullToRefresh(prev => ({ ...prev, isPulling: false, distance: 0 }))
+          }
+        }
+        
+        requestAnimationFrame(animateReturn)
+      }
+      
+      currentDistance = 0
+      pullStartRef.current = null
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: false })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [])
   
   const handleCustomerClick = (customerId) => {
     if (selectedCustomer === customerId) {
@@ -54,8 +177,16 @@ export default function AgingReport() {
       }
 
       // Use dueDate if available, otherwise invoice date
-      const referenceDate = invoice.dueDate ? parseISO(invoice.dueDate) : parseISO(invoice.date)
-      const daysOverdue = differenceInDays(today, referenceDate)
+      let referenceDate = null
+      if (invoice.dueDate) {
+        const parsed = parseISO(invoice.dueDate)
+        referenceDate = isValid(parsed) ? parsed : null
+      }
+      if (!referenceDate && invoice.date) {
+        const parsed = parseISO(invoice.date)
+        referenceDate = isValid(parsed) ? parsed : null
+      }
+      const daysOverdue = referenceDate ? differenceInDays(today, referenceDate) : 0
 
       customerMap[customerId].invoices.push({
         ...invoice,
@@ -249,13 +380,24 @@ export default function AgingReport() {
                     .map((invoice) => (
                       <tr key={invoice.id} className="hover:bg-gray-50">
                         <td className="font-medium text-brand-primary">{invoice.invoiceNo}</td>
-                        <td className="text-gray-600">{format(new Date(invoice.date), 'dd MMM yyyy')}</td>
+                        <td className="text-gray-600">
+                          {invoice.date ? (() => {
+                            const date = parseISO(invoice.date)
+                            return isValid(date) ? format(date, 'dd MMM yyyy') : invoice.date
+                          })() : '--'}
+                        </td>
                         <td className={`font-medium ${
-                          invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.outstanding > 0
+                          invoice.dueDate && (() => {
+                            const dueDate = parseISO(invoice.dueDate)
+                            return isValid(dueDate) && dueDate < today && invoice.outstanding > 0
+                          })()
                             ? 'text-red-600'
                             : 'text-gray-600'
                         }`}>
-                          {invoice.dueDate ? format(new Date(invoice.dueDate), 'dd MMM yyyy') : '--'}
+                          {invoice.dueDate ? (() => {
+                            const date = parseISO(invoice.dueDate)
+                            return isValid(date) ? format(date, 'dd MMM yyyy') : invoice.dueDate
+                          })() : '--'}
                         </td>
                         <td className="text-right font-medium text-gray-900">{formatCurrency(invoice.totals?.grandTotal || 0)}</td>
                         <td className="text-right text-green-600">{formatCurrency(invoice.amountPaid || 0)}</td>

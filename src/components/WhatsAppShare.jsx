@@ -5,7 +5,7 @@ import { BRAND } from '../data/branding'
 import { useToast } from './ToastContainer'
 import { formatPhoneForWhatsApp, formatPhoneForDisplay } from '../utils/phoneUtils'
 
-export default function WhatsAppShare({ invoice, className = '', showHint = true }) {
+export default function WhatsAppShare({ invoice, className = '', showHint = true, label = 'Share via WhatsApp' }) {
   const [sharing, setSharing] = useState(false)
   const previewRef = useRef(null)
   const toast = useToast()
@@ -110,10 +110,10 @@ export default function WhatsAppShare({ invoice, className = '', showHint = true
       <button
         type="button"
         onClick={handleShare}
-        className={`btn-primary bg-green-600 hover:bg-green-700 ${className}`}
+        className={className || 'btn-primary bg-green-600 hover:bg-green-700'}
         disabled={sharing}
       >
-        {sharing ? 'Preparing...' : 'Share via WhatsApp'}
+        {sharing ? 'Preparing...' : label}
       </button>
       {showHint && (
         <div className="mt-2 space-y-1">
@@ -126,9 +126,6 @@ export default function WhatsAppShare({ invoice, className = '', showHint = true
               ⚠️ Customer phone number missing
             </p>
           )}
-          <p className="text-xs text-gray-500 max-w-sm">
-            PDF downloads automatically — attach it from WhatsApp before sending
-          </p>
         </div>
       )}
       <div className="hidden">

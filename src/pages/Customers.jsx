@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useData } from '../context/DataContext'
 import { useToast } from '../components/ToastContainer'
@@ -27,12 +27,156 @@ export default function Customers() {
   const [editingNotes, setEditingNotes] = useState(null)
   const [notesValue, setNotesValue] = useState('')
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, customer: null })
+  
+  // Pull to refresh state
+  const [pullToRefresh, setPullToRefresh] = useState({ 
+    isPulling: false, 
+    startY: 0, 
+    distance: 0, 
+    isRefreshing: false 
+  })
+  const pullStartRef = useRef(null)
 
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  // Pull to refresh functionality (mobile only, upper half)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    let currentDistance = 0
+    let rafId = null
+    
+    const handleTouchStart = (e) => {
+      // Only enable in mobile view (upper 1/3 of screen)
+      if (window.innerWidth > 768) return
+      const touch = e.touches[0]
+      const startY = touch.clientY
+      const scrollY = window.scrollY || document.documentElement.scrollTop
+      
+      // Only activate in upper 1/3 of viewport
+      if (startY > window.innerHeight / 3) return
+      
+      // Only if scrolled to top
+      if (scrollY > 10) return
+      
+      pullStartRef.current = { startY, startScrollY: scrollY }
+      currentDistance = 0
+      setPullToRefresh({ isPulling: false, startY, distance: 0, isRefreshing: false })
+    }
+
+    const updatePullState = () => {
+      if (!pullStartRef.current) return
+      
+      const distance = Math.min(currentDistance, 80) // Cap at 80px
+      setPullToRefresh(prev => ({
+        ...prev,
+        isPulling: currentDistance > 5,
+        distance: distance
+      }))
+    }
+
+    const handleTouchMove = (e) => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      const touch = e.touches[0]
+      const currentY = touch.clientY
+      const newDistance = Math.max(0, currentY - pullStartRef.current.startY)
+      
+      // Smooth distance calculation with easing
+      currentDistance = currentDistance + (newDistance - currentDistance) * 0.3
+      
+      // Only allow pull down
+      if (currentDistance > 0 && currentDistance < 100) {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+        }
+        rafId = requestAnimationFrame(() => {
+          updatePullState()
+          if (currentDistance > 5 && currentDistance < 100) {
+            rafId = requestAnimationFrame(updatePullState)
+          }
+        })
+        
+        // Prevent default scrolling when pulling
+        if (currentDistance > 10) {
+          e.preventDefault()
+        }
+      } else {
+        if (rafId) {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (!pullStartRef.current) return
+      if (window.innerWidth > 768) return
+      
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      
+      // Trigger refresh if pulled enough (60px threshold)
+      if (currentDistance > 60) {
+        setPullToRefresh(prev => ({ ...prev, isRefreshing: true, isPulling: false, distance: 70 }))
+        
+        // Use DataContext refresh instead of full page reload
+        setTimeout(() => {
+          window.location.reload()
+        }, 300)
+      } else {
+        // Smooth return animation with easing
+        const startDistance = currentDistance
+        const startTime = performance.now()
+        const duration = 300
+        
+        const animateReturn = (currentTime) => {
+          const elapsed = currentTime - startTime
+          const progress = Math.min(elapsed / duration, 1)
+          const eased = 1 - Math.pow(1 - progress, 3) // Ease out cubic
+          
+          const newDistance = startDistance * (1 - eased)
+          setPullToRefresh(prev => ({ 
+            ...prev, 
+            isPulling: newDistance > 5, 
+            distance: newDistance 
+          }))
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateReturn)
+          } else {
+            setPullToRefresh(prev => ({ ...prev, isPulling: false, distance: 0 }))
+          }
+        }
+        
+        requestAnimationFrame(animateReturn)
+      }
+      
+      currentDistance = 0
+      pullStartRef.current = null
+    }
+
+    // Add touch event listeners
+    document.addEventListener('touchstart', handleTouchStart, { passive: false })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [])
 
   // Filter customers
   const filteredCustomers = useMemo(() => {
@@ -169,7 +313,73 @@ export default function Customers() {
   }
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-6 w-full relative">
+      {/* Pull to refresh indicator */}
+      {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
+        <div 
+          className="fixed top-4 left-1/2 z-50 md:hidden"
+          style={{ 
+            opacity: Math.min(pullToRefresh.distance / 40, 1),
+            transform: `translate(-50%, ${Math.max(0, pullToRefresh.distance - 40)}px)`,
+            transition: pullToRefresh.isRefreshing 
+              ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out' 
+              : 'none',
+            willChange: 'transform, opacity'
+          }}
+        >
+          <div 
+            className="bg-white rounded-full p-2 shadow-lg transition-all duration-200"
+            style={{
+              transform: `scale(${Math.min(1 + (pullToRefresh.distance / 200), 1.1)})`
+            }}
+          >
+            {pullToRefresh.isRefreshing ? (
+              <svg 
+                className="animate-spin h-6 w-6 text-blue-600" 
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24"
+                style={{
+                  animation: 'spin 1s linear infinite'
+                }}
+              >
+                <circle 
+                  className="opacity-25" 
+                  cx="12" 
+                  cy="12" 
+                  r="10" 
+                  stroke="currentColor" 
+                  strokeWidth="4"
+                ></circle>
+                <path 
+                  className="opacity-75" 
+                  fill="currentColor" 
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            ) : (
+              <svg 
+                className="h-6 w-6 text-blue-600"
+                style={{
+                  transform: `rotate(${Math.min(pullToRefresh.distance * 2.5, 180)}deg)`,
+                  transition: 'transform 0.15s ease-out'
+                }}
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M19 14l-7 7m0 0l-7-7m7 7V3" 
+                />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
       <PageHeader
         title="Customers"
         subtitle={`${filteredCustomers.length} customers • ${formatCurrency(totalReceivables)} total receivables`}
@@ -192,11 +402,14 @@ export default function Customers() {
       {/* Zoho-style Compact Search Bar */}
       <div className="flex items-center gap-2 justify-center sm:justify-start">
         <div className="relative w-full max-w-xs sm:max-w-none sm:flex-1">
+          <label htmlFor="customer-search" className="sr-only">Search customers</label>
           <input
+            id="customer-search"
             className="w-full pr-7 sm:pr-9 md:pr-10 text-sm sm:text-base py-2 sm:py-2.5 pl-3 sm:pl-[2.25rem]"
-            placeholder="Search in Customers ( / )"
+            placeholder="Search by name, phone, email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search customers"
           />
           <svg className="hidden sm:block w-4 sm:h-4 md:w-5 md:h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -300,7 +513,7 @@ export default function Customers() {
                 required
                 className={`w-full ${errors.name ? 'border-red-500' : ''}`}
               />
-              {errors.name && <p className="text-xs text-red-600 mt-1">{errors.name}</p>}
+              {errors.name && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.name}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
@@ -328,7 +541,7 @@ export default function Customers() {
                 maxLength="10"
                 className={`w-full ${errors.phone ? 'border-red-500' : ''}`}
               />
-              {errors.phone && <p className="text-xs text-red-600 mt-1">{errors.phone}</p>}
+              {errors.phone && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.phone}</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
@@ -362,7 +575,7 @@ export default function Customers() {
               maxLength="15"
                 className={`w-full ${errors.gstin ? 'border-red-500' : ''}`}
               />
-              {errors.gstin && <p className="text-xs text-red-600 mt-1">{errors.gstin}</p>}
+              {errors.gstin && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.gstin}</p>}
             </div>
           </div>
           <details className="cursor-pointer">
@@ -390,7 +603,7 @@ export default function Customers() {
                   maxLength="12"
                   className={`w-full ${errors.aadhaar ? 'border-red-500' : ''}`}
                 />
-                {errors.aadhaar && <p className="text-xs text-red-600 mt-1">{errors.aadhaar}</p>}
+                {errors.aadhaar && <p className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">{errors.aadhaar}</p>}
               </div>
             </div>
           </details>
@@ -586,26 +799,26 @@ export default function Customers() {
       </section>
 
       {/* Mobile cards */}
-      <div className="md:hidden space-y-4">
+      <div className="md:hidden space-y-1.5">
         {filteredCustomers.map((customer) => {
           const gstTreatment = customer.gstin ? 'Registered Business' : 'Consumer'
           const isEditingNotes = editingNotes === customer.id
           return (
           <div
             key={customer.id}
-              className="glass-panel p-4"
+              className="glass-panel p-2 overflow-visible"
           >
               {/* Header Section */}
               <div 
-                className="cursor-pointer mb-4 pb-3 border-b border-gray-200"
+                className="cursor-pointer mb-2 pb-1.5 border-b border-gray-200"
             onClick={() => handleEditCustomer(customer)}
           >
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-brand-primary text-base leading-tight">{customer.name}</p>
-                  {customer.email && <p className="text-sm text-gray-600 mt-1.5 leading-snug break-all">{customer.email}</p>}
+                  <p className="font-semibold text-brand-primary text-xs leading-tight truncate">{customer.name}</p>
+                  {customer.email && <p className="text-[10px] text-gray-600 mt-0.5 leading-tight truncate">{customer.email}</p>}
                 </div>
-                <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-full flex-shrink-0 ml-2 ${
+                <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-medium rounded-full flex-shrink-0 ml-1.5 ${
                   customer.gstin 
                     ? 'bg-blue-100 text-blue-800' 
                     : 'bg-gray-100 text-gray-800'
@@ -615,51 +828,51 @@ export default function Customers() {
               </div>
               
               {/* Details Grid */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <span className="text-gray-500 text-xs block leading-tight">Phone</span>
-                <span className="text-gray-900 text-sm font-medium block leading-tight">{customer.phone || '--'}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-0">
+                <span className="text-gray-500 text-[9px] block leading-tight">Phone</span>
+                <span className="text-gray-900 text-[10px] font-medium block leading-tight">{customer.phone || '--'}</span>
               </div>
-              <div className="space-y-1">
-                <span className="text-gray-500 text-xs block leading-tight">State</span>
-                <span className="text-gray-900 text-sm font-medium block leading-tight">{customer.state || '--'}</span>
+              <div className="space-y-0">
+                <span className="text-gray-500 text-[9px] block leading-tight">State</span>
+                <span className="text-gray-900 text-[10px] font-medium block leading-tight truncate">{customer.state || '--'}</span>
               </div>
                 {customer.gstin && (
-                  <div className="col-span-2 space-y-1">
-                    <span className="text-gray-500 text-xs block leading-tight">GSTIN</span>
-                    <span className="text-gray-900 font-mono text-xs block leading-tight break-all">{customer.gstin}</span>
+                  <div className="col-span-2 space-y-0">
+                    <span className="text-gray-500 text-[9px] block leading-tight">GSTIN</span>
+                    <span className="text-gray-900 font-mono text-[10px] block leading-tight break-all">{customer.gstin}</span>
               </div>
                 )}
-              <div className="space-y-1">
-                  <span className="text-gray-500 text-xs block leading-tight">Receivables</span>
-                  <span className="font-semibold text-gray-900 text-base block leading-tight">{formatCurrency(receivablesMap[customer.id] || 0)}</span>
+              <div className="space-y-0">
+                  <span className="text-gray-500 text-[9px] block leading-tight">Receivables</span>
+                  <span className="font-semibold text-gray-900 text-xs block leading-tight">{formatCurrency(receivablesMap[customer.id] || 0)}</span>
               </div>
-              <div className="space-y-1">
-                  <span className="text-gray-500 text-xs block leading-tight">Purchase History</span>
+              <div className="space-y-0">
+                  <span className="text-gray-500 text-[9px] block leading-tight">Purchase History</span>
                   {purchaseHistoryMap[customer.id] && purchaseHistoryMap[customer.id].count > 0 ? (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         handlePurchaseHistoryClick(e, customer)
                       }}
-                      className="font-semibold text-brand-primary hover:underline text-sm text-left leading-tight"
+                      className="font-semibold text-brand-primary hover:underline text-[10px] text-left leading-tight"
                     >
-                      {formatCurrency(purchaseHistoryMap[customer.id].total)} ({purchaseHistoryMap[customer.id].count} invoice{purchaseHistoryMap[customer.id].count !== 1 ? 's' : ''})
+                      {formatCurrency(purchaseHistoryMap[customer.id].total)} ({purchaseHistoryMap[customer.id].count})
                     </button>
                   ) : (
-                    <span className="font-semibold text-gray-400 text-sm block leading-tight">--</span>
+                    <span className="font-semibold text-gray-400 text-[10px] block leading-tight">--</span>
                   )}
               </div>
               </div>
               </div>
               {/* Sticky Notes and Delete Button for Mobile */}
               <div 
-                className="mt-4 pt-3 border-t border-gray-200 flex gap-2"
+                className="mt-1.5 pt-1 border-t border-gray-200 flex gap-1 items-center justify-between"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex-1">
+                <div className="flex gap-1 items-center flex-1 min-w-0 overflow-hidden">
                   {isEditingNotes ? (
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <textarea
                         value={notesValue}
                         onChange={(e) => setNotesValue(e.target.value)}
@@ -680,45 +893,44 @@ export default function Customers() {
                             })
                           }
                         }}
-                        className="w-full p-1.5 text-[10px] border border-yellow-400 rounded bg-yellow-50 focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none"
-                        rows="2"
+                        className="w-full p-0.5 text-[9px] border border-yellow-400 rounded bg-yellow-50 focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none"
+                        rows="1"
                         autoFocus
                         placeholder="Add notes..."
                       />
-                      <p className="text-[9px] text-gray-500 mt-0.5">Ctrl+Enter to save, Esc to cancel</p>
+                      <p className="text-[8px] text-gray-500 mt-0.5">Ctrl+Enter to save, Esc to cancel</p>
                     </div>
                   ) : (
-                    <div
-                      onClick={() => {
-                        setEditingNotes(customer.id)
-                        setNotesValue(customer.notes || '')
-                      }}
-                      className={`w-full p-1.5 text-[10px] rounded cursor-pointer transition-all hover:shadow-sm ${
-                        customer.notes
-                          ? 'bg-yellow-100 border border-yellow-300 shadow-sm'
-                          : 'bg-gray-50 border border-dashed border-gray-300 text-gray-400'
-                      }`}
-                      style={{
-                        transform: customer.notes ? 'rotate(-1deg)' : 'none',
-                        boxShadow: customer.notes ? '1px 1px 2px rgba(0,0,0,0.1)' : 'none',
-                      }}
-                    >
-                      {customer.notes ? (
-                        <p className="text-gray-800 whitespace-pre-wrap break-words leading-tight">{customer.notes}</p>
-                      ) : (
-                        <p className="text-center leading-tight">📝 Click to add notes...</p>
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingNotes(customer.id)
+                          setNotesValue(customer.notes || '')
+                        }}
+                        className="flex-shrink-0 p-1 rounded hover:bg-gray-100 transition-colors"
+                        title={customer.notes ? 'Edit notes' : 'Add notes'}
+                      >
+                        <svg className="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      {customer.notes && (
+                        <div className="px-1 py-0.5 text-[8px] bg-yellow-100 border border-yellow-300 rounded max-w-[60px] overflow-hidden">
+                          <p className="text-gray-800 truncate leading-tight">{customer.notes}</p>
+                        </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
-                <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => setDeleteModal({ isOpen: true, customer })}
-                    className="btn-danger !py-1.5 !px-2 !text-[10px] h-fit"
-                  >
-                    Delete
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteModal({ isOpen: true, customer })
+                  }}
+                  className="btn-danger !py-1 !px-2.5 !text-[9px] flex-shrink-0 whitespace-nowrap"
+                >
+                  Del
+                </button>
               </div>
             </div>
           )
