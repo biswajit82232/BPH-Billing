@@ -955,7 +955,8 @@ export const DataProvider = ({ children }) => {
       reverseCharge: form.reverseCharge || false,
       customerSignature: form.customerSignature || '',
       amountPaid: form.amountPaid || 0,
-      discountAmount: totalsWithDiscount.discount || 0,
+      paymentMethods: form.paymentMethods && Array.isArray(form.paymentMethods) ? form.paymentMethods : [],
+      discountAmount: +discountAmount.toFixed(2), // Save the clamped discount amount directly
       version: (existingInvoice?.version || 0) + 1, // Increment version for optimistic locking
       synced: firebaseReady,
       createdAt: form.createdAt || Date.now(),
@@ -1082,6 +1083,12 @@ export const DataProvider = ({ children }) => {
     }
 
     const amountPaid = status === 'paid' ? (existing.totals?.grandTotal || 0) : existing.amountPaid || 0
+    
+    // If marking as paid and no payment methods exist, create one for consistency
+    let paymentMethods = existing.paymentMethods
+    if (status === 'paid' && (!paymentMethods || !Array.isArray(paymentMethods) || paymentMethods.length === 0) && amountPaid > 0) {
+      paymentMethods = [{ method: 'Cash', amount: amountPaid, reference: '' }]
+    }
 
     const updatedInvoices = invoices.map((inv) => {
       if (inv.id !== invoiceId) return inv
@@ -1089,6 +1096,7 @@ export const DataProvider = ({ children }) => {
         ...inv,
         status,
         amountPaid,
+        paymentMethods: paymentMethods || [],
         inventoryAdjusted: nextInventoryAdjusted,
         version: (inv.version || 0) + 1, // Increment version
       }

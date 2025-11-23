@@ -38,6 +38,7 @@ export default function CreateInvoice() {
   const [dueDate, setDueDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [amountPaid, setAmountPaid] = useState(0)
   const [discountAmount, setDiscountAmount] = useState(0)
+  const [paymentMethods, setPaymentMethods] = useState([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [customerSuggestions, setCustomerSuggestions] = useState([])
   const [customerSearch, setCustomerSearch] = useState('')
@@ -144,6 +145,7 @@ export default function CreateInvoice() {
         setDueDate(format(new Date(), 'yyyy-MM-dd'))
         setDiscountAmount(0)
         setAmountPaid(0)
+        setPaymentMethods([])
       }, 0)
       return
     }
@@ -184,7 +186,18 @@ export default function CreateInvoice() {
       setDueDate(format(new Date(), 'yyyy-MM-dd'))
     }
     setAmountPaid(editingInvoice.amountPaid || 0)
-    setDiscountAmount(editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0)
+    // Load payment methods from invoice, or create from amountPaid for backward compatibility
+    if (editingInvoice.paymentMethods && Array.isArray(editingInvoice.paymentMethods) && editingInvoice.paymentMethods.length > 0) {
+      setPaymentMethods(editingInvoice.paymentMethods)
+    } else if (editingInvoice.amountPaid > 0) {
+      // Backward compatibility: create a single payment method entry
+      setPaymentMethods([{ method: 'Cash', amount: editingInvoice.amountPaid, reference: '' }])
+    } else {
+      setPaymentMethods([])
+    }
+    // Load discount from invoice, with fallback to totals.discount for backward compatibility
+    const loadedDiscount = editingInvoice.discountAmount ?? editingInvoice.totals?.discount ?? 0
+    setDiscountAmount(Number(loadedDiscount) || 0)
     // Set tax enabled based on whether any items have tax
     const hasTax = editingInvoice.items?.some(item => item.taxPercent > 0) ?? true
     setTaxEnabled(hasTax)
@@ -200,12 +213,16 @@ export default function CreateInvoice() {
     [items, selectedCustomer, customCustomer, settings],
   )
 
+  // Only clamp discount if it exceeds grand total, but preserve it otherwise
   useEffect(() => {
-    setDiscountAmount((prev) => {
       const baseTotal = derived.totals.grandTotal
-      if (prev > baseTotal) {
+    setDiscountAmount((prev) => {
+      // Only update if discount exceeds the new grand total
+      // This prevents resetting valid discounts when totals change
+      if (prev > baseTotal && baseTotal > 0) {
         return baseTotal
       }
+      // Preserve the discount value if it's valid
       return prev
     })
   }, [derived.totals.grandTotal])
@@ -224,6 +241,12 @@ export default function CreateInvoice() {
       grandTotal: +netGrand.toFixed(2),
     }
   }, [derived.totals, discountValue])
+
+  // Sync amountPaid with paymentMethods total
+  useEffect(() => {
+    const totalFromMethods = paymentMethods.reduce((sum, pm) => sum + (Number(pm.amount) || 0), 0)
+    setAmountPaid(totalFromMethods)
+  }, [paymentMethods])
 
   const invoicePreview = useMemo(
     () => ({
@@ -247,9 +270,10 @@ export default function CreateInvoice() {
       notes: notes,
       reverseCharge: reverseCharge,
       amountPaid: Number(amountPaid) || 0,
+      paymentMethods: paymentMethods,
       customerSignature: customerSignature,
     }),
-    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid, customerSignature],
+    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid, paymentMethods, customerSignature],
   )
 
   const updateItem = useCallback((index, field, value) => {
@@ -373,6 +397,7 @@ export default function CreateInvoice() {
       reverseCharge,
       discountAmount: discountValue,
       amountPaid: finalAmountPaid,
+      paymentMethods: paymentMethods,
       customerSignature: customerSignature,
       version: editingInvoice?.version, // Include version for optimistic locking
     }
@@ -1060,41 +1085,232 @@ export default function CreateInvoice() {
               <span className="font-semibold text-gray-900">Grand Total:</span>
               <span className="text-lg font-semibold text-gray-900">{formatCurrency(totalsWithDiscount.grandTotal)}</span>
             </div>
-            <div className="pt-3 border-t border-gray-300 mt-3 space-y-2">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Amount Paid</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={amountPaid}
-                    onChange={(e) => {
-                      const value = Math.max(0, Math.min(Number(e.target.value) || 0, totalsWithDiscount.grandTotal))
-                      setAmountPaid(value)
-                    }}
-                    className="w-full pl-8"
-                    step="0.01"
-                    max={totalsWithDiscount.grandTotal}
-                  />
-                </div>
+            <div className="pt-2 sm:pt-3 border-t border-gray-300 mt-2 sm:mt-3 space-y-2 sm:space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0 mb-2 sm:mb-3">
+                <label className="block text-xs font-semibold text-gray-700">Payment Methods</label>
                 <button
                   type="button"
-                  onClick={() => setAmountPaid(totalsWithDiscount.grandTotal)}
-                  className="text-xs text-brand-primary hover:underline mt-1"
+                  onClick={() => {
+                    const remaining = totalsWithDiscount.grandTotal - amountPaid
+                    if (remaining > 0) {
+                      setPaymentMethods([...paymentMethods, { method: 'Cash', amount: remaining, reference: '' }])
+                    } else {
+                      setPaymentMethods([...paymentMethods, { method: 'Cash', amount: 0, reference: '' }])
+                    }
+                  }}
+                  className="btn-primary flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-3 sm:py-2 text-xs font-medium rounded-md shadow-sm hover:shadow transition-all"
                 >
-                  Mark as fully paid
+                  <svg className="w-3.5 h-3.5 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Add Payment</span>
                 </button>
               </div>
-              <div className="flex justify-between pt-2 border-t border-gray-200">
+              
+              {paymentMethods.length === 0 ? (
+                <div className="text-center py-3 px-3 sm:py-6 sm:px-4 bg-gray-50 rounded-md sm:rounded-lg border border-dashed sm:border-2 border-gray-300">
+                  <svg className="w-8 h-8 sm:w-12 sm:h-12 mx-auto text-gray-400 mb-1 sm:mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <p className="text-xs sm:text-sm text-gray-500 font-medium">No payment methods</p>
+                  <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1">Tap "Add Payment" to add</p>
+                </div>
+              ) : (
+                <div className="space-y-2 sm:space-y-3">
+                  {paymentMethods.map((pm, idx) => (
+                    <div key={idx} className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-md sm:rounded-lg p-2 sm:p-2.5 shadow-sm">
+                      {/* Mobile Layout */}
+                      <div className="block sm:hidden space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={pm.method}
+                            onChange={(e) => {
+                              const updated = [...paymentMethods]
+                              updated[idx].method = e.target.value
+                              setPaymentMethods(updated)
+                            }}
+                            className="flex-1 text-xs font-medium bg-white border border-gray-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                          >
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Finance Company">Finance Company</option>
+                            <option value="Cheque">Cheque</option>
+                            <option value="Card">Card (Debit/Credit)</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentMethods(paymentMethods.filter((_, i) => i !== idx))
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+                            title="Remove"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        {pm.method === 'Finance Company' && (
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Company name"
+                              value={pm.companyName || ''}
+                              onChange={(e) => {
+                                const updated = [...paymentMethods]
+                                updated[idx].companyName = e.target.value
+                                setPaymentMethods(updated)
+                              }}
+                              className="w-full text-xs bg-white border border-gray-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                            />
+                          </div>
+                        )}
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-medium">₹</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={pm.amount || ''}
+                            onChange={(e) => {
+                              const value = Math.max(0, Number(e.target.value) || 0)
+                              const updated = [...paymentMethods]
+                              updated[idx].amount = value
+                              setPaymentMethods(updated)
+                            }}
+                            max={totalsWithDiscount.grandTotal}
+                            className="w-full text-xs font-semibold bg-white border border-gray-300 rounded px-7 pr-2 py-1.5 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Ref/Note (optional)"
+                            value={pm.reference || ''}
+                            onChange={(e) => {
+                              const updated = [...paymentMethods]
+                              updated[idx].reference = e.target.value
+                              setPaymentMethods(updated)
+                            }}
+                            className="w-full text-xs bg-white border border-gray-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Desktop Layout */}
+                      <div className="hidden sm:grid sm:grid-cols-12 gap-2 items-end">
+                        <div className="col-span-3">
+                          <select
+                            value={pm.method}
+                            onChange={(e) => {
+                              const updated = [...paymentMethods]
+                              updated[idx].method = e.target.value
+                              setPaymentMethods(updated)
+                            }}
+                            className="w-full text-xs font-medium bg-white border border-gray-300 rounded-md px-2 py-2 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                          >
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Finance Company">Finance Company</option>
+                            <option value="Cheque">Cheque</option>
+                            <option value="Card">Card (Debit/Credit)</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        {pm.method === 'Finance Company' && (
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              placeholder="Company name"
+                              value={pm.companyName || ''}
+                              onChange={(e) => {
+                                const updated = [...paymentMethods]
+                                updated[idx].companyName = e.target.value
+                                setPaymentMethods(updated)
+                              }}
+                              className="w-full text-xs bg-white border border-gray-300 rounded-md px-2 py-2 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                            />
+                          </div>
+                        )}
+                        <div className={pm.method === 'Finance Company' ? 'col-span-3' : 'col-span-4'}>
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">₹</span>
+                            <input
+                              type="number"
+                              placeholder="0.00"
+                              value={pm.amount || ''}
+                              onChange={(e) => {
+                                const value = Math.max(0, Number(e.target.value) || 0)
+                                const updated = [...paymentMethods]
+                                updated[idx].amount = value
+                                setPaymentMethods(updated)
+                              }}
+                              max={totalsWithDiscount.grandTotal}
+                              className="w-full text-xs font-semibold bg-white border border-gray-300 rounded-md pl-7 pr-2 py-2 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                        <div className={pm.method === 'Finance Company' ? 'col-span-3' : 'col-span-4'}>
+                          <input
+                            type="text"
+                            placeholder="Ref/Note"
+                            value={pm.reference || ''}
+                            onChange={(e) => {
+                              const updated = [...paymentMethods]
+                              updated[idx].reference = e.target.value
+                              setPaymentMethods(updated)
+                            }}
+                            className="w-full text-xs bg-white border border-gray-300 rounded-md px-2 py-2 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                          />
+                        </div>
+                        <div className="col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentMethods(paymentMethods.filter((_, i) => i !== idx))
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                            title="Remove"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="pt-2 border-t border-gray-200 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total Paid:</span>
+                  <span className={`font-medium ${amountPaid > totalsWithDiscount.grandTotal ? 'text-red-600' : 'text-gray-900'}`}>
+                    {formatCurrency(amountPaid)}
+                  </span>
+                </div>
+                {amountPaid > totalsWithDiscount.grandTotal && (
+                  <p className="text-xs text-red-600 italic">
+                    ⚠️ Total paid exceeds invoice amount
+                  </p>
+                )}
+                <div className="flex justify-between">
                 <span className="font-semibold text-gray-900">Outstanding:</span>
                 <span className={`text-lg font-semibold ${
-                  (totalsWithDiscount.grandTotal - (Number(amountPaid) || 0)) > 0 
+                    (totalsWithDiscount.grandTotal - amountPaid) > 0 
                     ? 'text-red-600' 
                     : 'text-green-600'
                 }`}>
-                  {formatCurrency(Math.max(0, totalsWithDiscount.grandTotal - (Number(amountPaid) || 0)))}
+                    {formatCurrency(Math.max(0, totalsWithDiscount.grandTotal - amountPaid))}
                 </span>
+                </div>
               </div>
             </div>
           </div>

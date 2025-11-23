@@ -237,10 +237,30 @@ function InvoicePreview({ invoice }) {
           </div>
           {amountPaid > 0 && (
             <>
-              <div className="flex justify-between text-sm py-1 text-green-700">
-                <span className="font-medium">Amount Paid</span>
-                <span className="font-medium">{formatCurrency(amountPaid)}</span>
-              </div>
+              {invoice.paymentMethods && Array.isArray(invoice.paymentMethods) && invoice.paymentMethods.length > 0 ? (
+                <div className="pt-2 border-t border-gray-200 space-y-1">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Payment Methods:</div>
+                  {invoice.paymentMethods.map((pm, idx) => (
+                    <div key={idx} className="flex justify-between text-xs text-gray-600">
+                      <span>
+                        {pm.method}
+                        {pm.method === 'Finance Company' && pm.companyName && ` (${pm.companyName})`}
+                        {pm.reference && ` - ${pm.reference}`}
+                      </span>
+                      <span className="font-medium">{formatCurrency(Number(pm.amount) || 0)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-sm pt-1 border-t border-gray-200 mt-1 text-green-700">
+                    <span className="font-medium">Total Paid</span>
+                    <span className="font-medium">{formatCurrency(amountPaid)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-between text-sm py-1 text-green-700">
+                  <span className="font-medium">Amount Paid</span>
+                  <span className="font-medium">{formatCurrency(amountPaid)}</span>
+                </div>
+              )}
               {outstanding > 0 && (
                 <div className="flex justify-between pt-2 border-t border-gray-200">
                   <span className="text-base font-semibold text-red-700">Outstanding</span>
