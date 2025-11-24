@@ -863,9 +863,31 @@ export const DataProvider = ({ children }) => {
     // Get latest meta to avoid race conditions with invoice sequence
     const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
     const currentMeta = latestData.meta || meta
-    const seq = (currentMeta?.invoiceSequence || 0) + 1
+    let nextSequence = (currentMeta?.invoiceSequence || 0) + 1
     const invoiceDate = safeParseDate(form.date) || new Date()
-    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, invoiceDate, settings.invoicePrefix)
+    const manualInvoiceNo = (form.invoiceNo || '').trim()
+    const existingInvoices = (latestData.invoices || invoices || []).filter(Boolean)
+
+    let invoiceNo = manualInvoiceNo
+    if (invoiceNo) {
+      const duplicateManual = existingInvoices.some(
+        (inv) => inv.invoiceNo?.toLowerCase() === invoiceNo.toLowerCase() && inv.id !== form.id,
+      )
+      if (duplicateManual) {
+        const error = new Error('Invoice number already exists')
+        error.code = 'DUPLICATE_INVOICE_NO'
+        throw error
+      }
+    } else {
+      invoiceNo = makeInvoiceNo(nextSequence, invoiceDate, settings.invoicePrefix)
+      const existingNumbers = new Set(
+        existingInvoices.filter((inv) => inv.invoiceNo && inv.id !== form.id).map((inv) => inv.invoiceNo),
+      )
+      while (existingNumbers.has(invoiceNo)) {
+        nextSequence += 1
+        invoiceNo = makeInvoiceNo(nextSequence, invoiceDate, settings.invoicePrefix)
+      }
+    }
     const existingInvoice = form.id ? invoices.find((inv) => inv.id === form.id) : null
     // Use latest products to avoid stale inventory data
     let nextProducts = latestData.products || products
@@ -1008,7 +1030,7 @@ export const DataProvider = ({ children }) => {
     // Update meta atomically to prevent race conditions
     let metaSnapshot = currentMeta
     if (!form.id) {
-      const nextMeta = { ...currentMeta, invoiceSequence: seq }
+      const nextMeta = { ...currentMeta, invoiceSequence: nextSequence }
       metaSnapshot = nextMeta
       // Persist meta immediately before saving invoice
       await persistMeta(nextMeta)

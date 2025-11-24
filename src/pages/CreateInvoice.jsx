@@ -9,7 +9,7 @@ import PrintInvoice from '../components/PrintInvoice'
 import InvoicePreview from '../components/InvoicePreview'
 import PageHeader from '../components/PageHeader'
 import SignaturePad from '../components/SignaturePad'
-import { calculateInvoiceTotals, formatCurrency } from '../lib/taxUtils'
+import { calculateInvoiceTotals, formatCurrency, makeInvoiceNo } from '../lib/taxUtils'
 import { safeReload } from '../utils/reloadGuard'
 
 const blankItem = {
@@ -22,7 +22,7 @@ const blankItem = {
 }
 
 export default function CreateInvoice() {
-  const { customers, products, settings, saveInvoice, invoices, upsertCustomer, updateSettings } = useData()
+  const { customers, products, settings, saveInvoice, invoices, upsertCustomer, updateSettings, meta } = useData()
   const toast = useToast()
   const navigate = useNavigate()
   const { invoiceId } = useParams()
@@ -47,7 +47,21 @@ export default function CreateInvoice() {
   const [activeItemIndex, setActiveItemIndex] = useState(null)
   const [customerPhoneOverride, setCustomerPhoneOverride] = useState('')
   const [taxEnabled, setTaxEnabled] = useState(true)
+  const [invoiceNoManual, setInvoiceNoManual] = useState('')
+  const [invoiceNoEdited, setInvoiceNoEdited] = useState(false)
   const selectedCustomer = customerId ? customers.find((c) => c.id === customerId) : null
+  const autoInvoiceNo = useMemo(
+    () => makeInvoiceNo((meta?.invoiceSequence || 0) + 1, date, settings.invoicePrefix || 'BPH'),
+    [meta?.invoiceSequence, date, settings.invoicePrefix],
+  )
+  const invoiceNumberDisplay = invoiceNoEdited ? (invoiceNoManual || '') : autoInvoiceNo
+  const manualInvoiceNoClean = invoiceNoEdited ? (invoiceNoManual || '').trim() : ''
+  const invoiceNoConflict = useMemo(() => {
+    if (!invoiceNoEdited || !manualInvoiceNoClean) return false
+    return invoices.some(
+      (inv) => inv.invoiceNo?.toLowerCase() === manualInvoiceNoClean.toLowerCase() && inv.id !== editingInvoice?.id,
+    )
+  }, [invoiceNoEdited, manualInvoiceNoClean, invoices, editingInvoice])
   
   // Pull to refresh state
   const [pullToRefresh, setPullToRefresh] = useState({ 
@@ -203,6 +217,16 @@ export default function CreateInvoice() {
     setTaxEnabled(hasTax)
   }, [editingInvoice, customers, settings.companyState])
 
+  useEffect(() => {
+    if (editingInvoice) {
+      setInvoiceNoManual(editingInvoice.invoiceNo || '')
+      setInvoiceNoEdited(true)
+    } else {
+      setInvoiceNoManual('')
+      setInvoiceNoEdited(false)
+    }
+  }, [editingInvoice])
+
   const derived = useMemo(
     () =>
       calculateInvoiceTotals(
@@ -251,7 +275,7 @@ export default function CreateInvoice() {
   const invoicePreview = useMemo(
     () => ({
       id: editingInvoice?.id || 'preview',
-      invoiceNo: editingInvoice?.invoiceNo || 'Preview',
+      invoiceNo: invoiceNumberDisplay || 'Preview',
       date,
       terms: terms,
       dueDate: dueDate,
@@ -273,7 +297,7 @@ export default function CreateInvoice() {
       paymentMethods: paymentMethods,
       customerSignature: customerSignature,
     }),
-    [editingInvoice, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid, paymentMethods, customerSignature],
+    [invoiceNumberDisplay, date, terms, dueDate, selectedCustomer, customCustomer, settings.companyState, derived.rows, totalsWithDiscount, discountValue, notes, reverseCharge, amountPaid, paymentMethods, customerSignature],
   )
 
   const updateItem = useCallback((index, field, value) => {
@@ -385,9 +409,20 @@ export default function CreateInvoice() {
       return
     }
 
+    if (invoiceNoEdited) {
+      if (!manualInvoiceNoClean) {
+        toast.error('Invoice number cannot be empty')
+        return
+      }
+      if (invoiceNoConflict) {
+        toast.error('Invoice number already exists. Please choose a different value.')
+        return
+      }
+    }
+
     const payload = {
       id: editingInvoice?.id,
-      invoiceNo: editingInvoice?.invoiceNo,
+      invoiceNo: invoiceNoEdited ? manualInvoiceNoClean : undefined,
       date,
       terms,
       dueDate,
@@ -589,7 +624,39 @@ export default function CreateInvoice() {
           </div>
 
           {/* Right Column */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Invoice Number</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={invoiceNumberDisplay}
+                  onChange={(e) => {
+                    setInvoiceNoEdited(true)
+                    setInvoiceNoManual(e.target.value.toUpperCase())
+                  }}
+                  className="w-full"
+                  placeholder="Auto generated"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInvoiceNoEdited(false)
+                    setInvoiceNoManual('')
+                  }}
+                  disabled={!invoiceNoEdited}
+                  className="px-3 py-2 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Revert to auto-generated number"
+                >
+                  Auto
+                </button>
+              </div>
+              <p className={`text-xs mt-1 ${invoiceNoConflict ? 'text-red-600' : 'text-gray-500'}`}>
+                {invoiceNoConflict
+                  ? 'Invoice number already exists. Choose a different value.'
+                  : 'Generated from company prefix and date. You can override it manually.'}
+              </p>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Invoice Date</label>
               <input
@@ -613,7 +680,7 @@ export default function CreateInvoice() {
                 <option value="Net 60">Net 60</option>
               </select>
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2 lg:col-span-3">
               <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Due Date</label>
               <input
                 type="date"
