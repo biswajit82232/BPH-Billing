@@ -9,7 +9,7 @@ import { safeReload } from '../utils/reloadGuard'
 export default function BackupRestore() {
   const fileRef = useRef(null)
   const toast = useToast()
-  const { backupData, restoreBackup, settings, updateSettings, pendingInvoices, syncPendingInvoices } = useData()
+  const { backupData, restoreBackup, settings, updateSettings, pendingInvoices, syncPendingInvoices, resetAllData, firebaseReady, online } = useData()
   const { users, addUser, updateUser, deleteUser, replaceUsers } = useAuth()
   const [localSettings, setLocalSettings] = useState(settings)
   const [showUserManagement, setShowUserManagement] = useState(false)
@@ -36,6 +36,8 @@ export default function BackupRestore() {
   })
   const [editingUserId, setEditingUserId] = useState(null)
   
+  const [resettingCloud, setResettingCloud] = useState(false)
+
   // Pull to refresh state
   const [pullToRefresh, setPullToRefresh] = useState({ 
     isPulling: false, 
@@ -213,6 +215,30 @@ export default function BackupRestore() {
     }
   }
 
+  const handleFullReset = async () => {
+    if (!window.confirm('⚠️ This will delete ALL invoices, customers, products, purchases, settings and activity both locally and on Firebase. This cannot be undone. Continue?')) {
+      return
+    }
+
+    const confirmation = window.prompt('Type RESET to confirm full data wipe:')
+    if ((confirmation || '').trim().toUpperCase() !== 'RESET') {
+      toast.info('Reset cancelled')
+      return
+    }
+
+    try {
+      setResettingCloud(true)
+      await resetAllData()
+      toast.success('All local and Firebase data cleared. Reloading...')
+      safeReload(1500)
+    } catch (error) {
+      console.error('Full reset failed:', error)
+      toast.error('Failed to reset data. Check console/network.')
+    } finally {
+      setResettingCloud(false)
+    }
+  }
+
   return (
     <div className="space-y-6 w-full relative">
       {/* Pull to refresh indicator */}
@@ -355,6 +381,29 @@ export default function BackupRestore() {
           </button>
           <p className="text-xs text-gray-500 mt-2">
             This will permanently delete all data stored in your browser. Use with caution.
+          </p>
+        </div>
+
+        <div className="border-t border-gray-200 pt-4">
+          <button
+            className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed bg-red-800 hover:bg-red-900"
+            onClick={handleFullReset}
+            disabled={resettingCloud || !firebaseReady || !online}
+          >
+            {resettingCloud ? (
+              <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 12H6m6-6v12" />
+              </svg>
+            )}
+            Reset Local + Firebase Data
+          </button>
+          <p className="text-xs text-gray-500 mt-2">
+            Requires internet & Firebase connection. Deletes all synced data permanently.
           </p>
         </div>
       </section>

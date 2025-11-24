@@ -36,7 +36,7 @@ export default function PDFGenerator({ invoice, label = 'Download PDF', classNam
             mode: ['css', 'legacy'],
             before: '.page-break-before',
             after: '.page-break-after',
-            avoid: ['tr', '.no-break']
+            avoid: ['tr', '.no-break', '#invoice-' + invoice.id, '.signature-container', '.signature-rotated']
           }
         })
         .from(element)

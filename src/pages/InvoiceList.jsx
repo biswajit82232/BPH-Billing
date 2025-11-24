@@ -12,6 +12,7 @@ import { useToast } from '../components/ToastContainer'
 import { formatCurrency } from '../lib/taxUtils'
 import { format, subDays, startOfWeek, startOfMonth } from 'date-fns'
 import { safeReload } from '../utils/reloadGuard'
+import { safeParseDate, safeCompareDates, isDateBefore } from '../utils/dateUtils'
 
 const ITEMS_PER_PAGE = 50
 
@@ -302,8 +303,11 @@ export default function InvoiceList() {
         invoice.customerName.toLowerCase().includes(query) ||
         phone.includes(query)
       const matchesStatus = status === 'all' || invoice.status === status
-      const matchesFrom = !from || new Date(invoice.date) >= new Date(from)
-      const matchesTo = !to || new Date(invoice.date) <= new Date(to)
+      const invoiceDate = safeParseDate(invoice.date)
+      const fromDate = safeParseDate(from)
+      const toDate = safeParseDate(to)
+      const matchesFrom = !from || !invoiceDate || !fromDate || safeCompareDates(invoiceDate, fromDate) >= 0
+      const matchesTo = !to || !invoiceDate || !toDate || safeCompareDates(invoiceDate, toDate) <= 0
       return matchesSearch && matchesStatus && matchesFrom && matchesTo
     })
 
@@ -312,12 +316,16 @@ export default function InvoiceList() {
       let aVal, bVal
       switch (sortField) {
         case 'date':
-          aVal = new Date(a.date).getTime()
-          bVal = new Date(b.date).getTime()
+          const aDate = safeParseDate(a.date)
+          const bDate = safeParseDate(b.date)
+          aVal = aDate ? aDate.getTime() : 0
+          bVal = bDate ? bDate.getTime() : 0
           break
         case 'dueDate':
-          aVal = a.dueDate ? new Date(a.dueDate).getTime() : 0
-          bVal = b.dueDate ? new Date(b.dueDate).getTime() : 0
+          const aDueDate = safeParseDate(a.dueDate)
+          const bDueDate = safeParseDate(b.dueDate)
+          aVal = aDueDate ? aDueDate.getTime() : 0
+          bVal = bDueDate ? bDueDate.getTime() : 0
           break
         case 'invoiceNo':
           aVal = a.invoiceNo
@@ -609,7 +617,7 @@ export default function InvoiceList() {
                     <td className="text-gray-600">{invoice.date}</td>
                     <td className="text-gray-600">
                       {invoice.dueDate || '--'}
-                      {invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.status !== 'paid' && (
+                      {invoice.dueDate && isDateBefore(invoice.dueDate) && invoice.status !== 'paid' && (
                         <span className="ml-2 text-red-600 text-xs">Overdue</span>
                       )}
                     </td>

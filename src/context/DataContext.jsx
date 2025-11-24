@@ -4,9 +4,10 @@ import { nanoid } from 'nanoid'
 import { ref, onValue, set, update, remove, off } from 'firebase/database'
 // Mock data removed - using empty initial state
 import { ensureFirebase, isFirebaseConfigured } from '../lib/firebase'
-import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData, clearLocalData, clearPendingInvoices } from '../lib/storage'
+import { loadPendingInvoices, persistPendingInvoices, loadLocalData, saveLocalData, clearLocalData, clearPendingInvoices, clearAllLocalStorage } from '../lib/storage'
 import { calculateInvoiceTotals, makeInvoiceNo } from '../lib/taxUtils'
 import { encryptCustomerFields, decryptCustomerFields } from '../lib/encryption'
+import { safeCompareDates, safeParseDate } from '../utils/dateUtils'
 
 const DataContext = createContext()
 
@@ -409,7 +410,7 @@ export const DataProvider = ({ children }) => {
           const bRecent = b._lastModified && (now - b._lastModified < 5000)
           if (aRecent && !bRecent) return -1
           if (!aRecent && bRecent) return 1
-          return new Date(b.date) - new Date(a.date)
+          return safeCompareDates(b.date, a.date)
         })
       })
     }, [])
@@ -648,7 +649,7 @@ export const DataProvider = ({ children }) => {
         
         if (isInitialLoad) {
           // On initial load, use Firebase data
-          setActivity(dataArray.sort((a, b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00')).slice(0, 20))
+          setActivity(dataArray.sort((a, b) => safeCompareDates(b.date, a.date)).slice(0, 20))
           isInitialLoad = false
         } else {
           // After initial load, merge with local activity to preserve recent local changes
@@ -863,7 +864,8 @@ export const DataProvider = ({ children }) => {
     const latestData = loadLocalData() || { invoices, customers, products, purchases, settings, meta, activity }
     const currentMeta = latestData.meta || meta
     const seq = (currentMeta?.invoiceSequence || 0) + 1
-    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, new Date(form.date), settings.invoicePrefix)
+    const invoiceDate = safeParseDate(form.date) || new Date()
+    const invoiceNo = form.invoiceNo || makeInvoiceNo(seq, invoiceDate, settings.invoicePrefix)
     const existingInvoice = form.id ? invoices.find((inv) => inv.id === form.id) : null
     // Use latest products to avoid stale inventory data
     let nextProducts = latestData.products || products
@@ -997,7 +999,7 @@ export const DataProvider = ({ children }) => {
         if (aRecent && !bRecent) return -1
         if (!aRecent && bRecent) return 1
         // Otherwise sort by date
-        return new Date(b.date) - new Date(a.date)
+        return safeCompareDates(b.date, a.date)
       })
     })
 
@@ -1406,6 +1408,44 @@ export const DataProvider = ({ children }) => {
     settings,
   }), [invoices, customers, products, purchases, meta, settings])
 
+  const resetAllData = useCallback(async () => {
+    const freshSettings = { ...defaultState.settings }
+    const freshMeta = { ...defaultState.meta }
+
+    setInvoices([])
+    setCustomers([])
+    setProducts([])
+    setPurchases([])
+    setSettings(freshSettings)
+    setMeta(freshMeta)
+    setActivity([])
+    setPendingInvoices([])
+
+    clearPendingInvoices()
+    clearLocalData()
+    clearAllLocalStorage()
+
+    saveLocalData({
+      invoices: [],
+      customers: [],
+      products: [],
+      purchases: [],
+      settings: freshSettings,
+      meta: freshMeta,
+      activity: [],
+    })
+
+    if (firebaseReady && online && db) {
+      const paths = ['invoices', 'customers', 'products', 'purchases', 'settings', 'meta', 'activity']
+      try {
+        await Promise.all(paths.map((path) => remove(ref(db, path))))
+      } catch (error) {
+        console.warn('Failed to reset Firebase data:', error)
+        throw error
+      }
+    }
+  }, [firebaseReady, online, db])
+
   const restoreBackup = useCallback(async (payload) => {
     // Decrypt customers when restoring (if they were encrypted in backup)
     const decryptedCustomers = (payload.customers || []).map(c => {
@@ -1545,6 +1585,7 @@ export const DataProvider = ({ children }) => {
       backupData,
       restoreBackup,
       syncPendingInvoices,
+      resetAllData,
     }),
     [
       invoices,
@@ -1571,6 +1612,7 @@ export const DataProvider = ({ children }) => {
       backupData,
       restoreBackup,
       syncPendingInvoices,
+      resetAllData,
     ],
   )
 

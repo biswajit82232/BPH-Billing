@@ -68,18 +68,18 @@ function InvoicePreview({ invoice }) {
 
   return (
     <div
-      className={currentStyle.container}
+      className={`${currentStyle.container} no-break`}
       id={`invoice-${invoice.id}`}
       style={{ 
         maxWidth: '210mm', 
         margin: '0 auto',
         pageBreakInside: 'avoid',
-        pageBreakAfter: 'auto',
-        padding: '12px'
+        pageBreakAfter: 'avoid',
+        padding: '10px'
       }}
     >
       {/* Header */}
-      <div className={currentStyle.header} style={{ pageBreakInside: 'avoid', paddingBottom: '10px', marginBottom: '10px' }}>
+      <div className={currentStyle.header} style={{ pageBreakInside: 'avoid', paddingBottom: '8px', marginBottom: '8px' }}>
         <div className="space-y-1">
           <h2 className={currentStyle.headerTitle} style={{ fontSize: '16px', lineHeight: '1.3' }}>{settings?.companyName || BRAND.name}</h2>
           {(settings?.companyTagline || BRAND.tagline) && (
@@ -112,7 +112,7 @@ function InvoicePreview({ invoice }) {
       </div>
 
       {/* Bill To */}
-      <div className="mb-3" style={{ pageBreakInside: 'avoid' }}>
+      <div className="mb-2" style={{ pageBreakInside: 'avoid' }}>
         <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Bill To</p>
         <div className="space-y-1">
           <p className="text-sm font-semibold text-gray-900">{customerName}</p>
@@ -155,7 +155,7 @@ function InvoicePreview({ invoice }) {
       </div>
 
       {/* Items Table */}
-      <div className="mb-3 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div className="mb-2 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full min-w-[350px] sm:min-w-[600px]" style={{ pageBreakInside: 'auto' }}>
           <thead style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
             <tr className="bg-gray-50 border-b border-gray-200">
@@ -202,7 +202,7 @@ function InvoicePreview({ invoice }) {
       </div>
 
       {/* Totals */}
-      <div className="flex justify-end mb-3" style={{ pageBreakInside: 'avoid' }}>
+      <div className="flex justify-end mb-2" style={{ pageBreakInside: 'avoid' }}>
         <div className="w-full md:w-80 space-y-1">
           <div className="flex justify-between text-[10px] py-0.5 leading-tight">
             <span className="text-gray-600">Subtotal</span>
@@ -274,7 +274,7 @@ function InvoicePreview({ invoice }) {
       </div>
 
       {/* Amount in Words */}
-      <div className="pt-2 border-t border-gray-200 mb-2" style={{ pageBreakInside: 'avoid' }}>
+      <div className="pt-1.5 border-t border-gray-200 mb-1.5" style={{ pageBreakInside: 'avoid' }}>
         <p className="text-[10px] text-gray-600 leading-tight">
           <span className="font-medium">Amount in words:</span> {amountToWords(invoice.totals.grandTotal)}
         </p>
@@ -282,7 +282,7 @@ function InvoicePreview({ invoice }) {
 
       {/* Customer Notes */}
       {invoice.notes && invoice.notes.trim() && (
-        <div className="pt-2 border-t border-gray-200 mb-2" style={{ pageBreakInside: 'avoid' }}>
+        <div className="pt-1.5 border-t border-gray-200 mb-1.5" style={{ pageBreakInside: 'avoid' }}>
           <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1">Notes</p>
           <p className="text-[10px] text-gray-600 whitespace-pre-line leading-tight">{invoice.notes}</p>
         </div>
@@ -290,7 +290,7 @@ function InvoicePreview({ invoice }) {
 
       {/* Reverse Charge Indicator */}
       {invoice.reverseCharge && (
-        <div className="pt-2 border-t border-gray-200 mb-2" style={{ pageBreakInside: 'avoid' }}>
+        <div className="pt-1.5 border-t border-gray-200 mb-1.5" style={{ pageBreakInside: 'avoid' }}>
           <p className="text-[10px] font-semibold text-red-700 uppercase tracking-wide leading-tight">
             ⚠️ Reverse Charge Applicable
           </p>
@@ -298,7 +298,7 @@ function InvoicePreview({ invoice }) {
       )}
 
       {/* Terms & Conditions */}
-      <div className="pt-2 border-t border-gray-200 mb-2" style={{ pageBreakInside: 'avoid' }}>
+      <div className="pt-1.5 border-t border-gray-200 mb-1.5" style={{ pageBreakInside: 'avoid' }}>
         <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1">Terms & Conditions</p>
         <div className="text-[10px] text-gray-600 space-y-0.5 leading-tight">
           <p>• Manufacturer warranty only. No warranty for damage or misuse.</p>
@@ -308,44 +308,44 @@ function InvoicePreview({ invoice }) {
       </div>
 
       {/* Signature Section */}
-      <div className="pt-2 border-t border-gray-200" style={{ pageBreakInside: 'avoid' }}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-3">
+      <div className="pt-2 border-t border-gray-200" style={{ pageBreakInside: 'avoid', marginTop: '8px' }}>
+        <div className="grid grid-cols-2 gap-4 mt-2">
           <div className="flex flex-col items-center">
-            <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 w-full text-center">Receiver's Signature</p>
+            <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1 w-full text-center">Receiver's Signature</p>
             {invoice.customerSignature ? (
-              <div className="signature-container" style={{ minHeight: '100px', minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+              <div className="signature-container" style={{ minHeight: '60px', minWidth: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
                 <img 
                   src={invoice.customerSignature} 
                   alt="Customer Signature" 
                   className="signature-rotated"
-                  style={{ maxWidth: '140px', maxHeight: '70px', objectFit: 'contain' }}
+                  style={{ maxWidth: '120px', maxHeight: '60px', objectFit: 'contain' }}
                 />
               </div>
             ) : (
-              <div className="border-b-2 border-gray-300 pt-8 w-full mb-1.5"></div>
+              <div className="border-b-2 border-gray-300 pt-6 w-full mb-1" style={{ minHeight: '60px' }}></div>
             )}
-            <p className="text-[10px] text-gray-500 mt-1 text-center w-full">{customerName}</p>
+            <p className="text-[9px] text-gray-500 mt-0.5 text-center w-full">{customerName}</p>
           </div>
           <div className="flex flex-col items-center">
-            <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 w-full text-center">Authorized Signatory</p>
+            <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-1 w-full text-center">Authorized Signatory</p>
             {settings.companySignature ? (
-              <div className="signature-container" style={{ minHeight: '100px', minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+              <div className="signature-container" style={{ minHeight: '60px', minWidth: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
                 <img 
                   src={settings.companySignature} 
                   alt="Company Signature" 
                   className="signature-rotated"
-                  style={{ maxWidth: '140px', maxHeight: '70px', objectFit: 'contain' }}
+                  style={{ maxWidth: '120px', maxHeight: '60px', objectFit: 'contain' }}
                 />
               </div>
             ) : (
-              <div className="flex items-center justify-center w-full mb-1.5" style={{ minHeight: '80px' }}>
+              <div className="flex items-center justify-center w-full mb-1" style={{ minHeight: '60px' }}>
                 <div className="text-center">
-                  <p className="text-base font-semibold text-gray-800" style={{ fontFamily: 'cursive', letterSpacing: '1px' }}>{BRAND.name}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">Authorized Signature</p>
+                  <p className="text-sm font-semibold text-gray-800" style={{ fontFamily: 'cursive', letterSpacing: '1px' }}>{BRAND.name}</p>
+                  <p className="text-[9px] text-gray-500 mt-0.5">Authorized Signature</p>
                 </div>
               </div>
             )}
-            <p className="text-[10px] text-gray-500 mt-1 text-center w-full">{BRAND.name}</p>
+            <p className="text-[9px] text-gray-500 mt-0.5 text-center w-full">{BRAND.name}</p>
           </div>
         </div>
       </div>

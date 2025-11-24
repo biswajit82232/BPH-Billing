@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/taxUtils'
 import { differenceInDays, parseISO, format } from 'date-fns'
 import { safeReload } from '../utils/reloadGuard'
+import { safeFormatDate, isDateBefore } from '../utils/dateUtils'
 
 export default function AgingReport() {
   const { invoices, customers } = useData()
@@ -373,13 +374,13 @@ export default function AgingReport() {
                     .map((invoice) => (
                       <tr key={invoice.id} className="hover:bg-gray-50">
                         <td className="font-medium text-brand-primary">{invoice.invoiceNo}</td>
-                        <td className="text-gray-600">{format(new Date(invoice.date), 'dd MMM yyyy')}</td>
+                        <td className="text-gray-600">{safeFormatDate(invoice.date, 'dd MMM yyyy', '--')}</td>
                         <td className={`font-medium ${
-                          invoice.dueDate && new Date(invoice.dueDate) < new Date() && invoice.outstanding > 0
+                          invoice.dueDate && isDateBefore(invoice.dueDate) && invoice.outstanding > 0
                             ? 'text-red-600'
                             : 'text-gray-600'
                         }`}>
-                          {invoice.dueDate ? format(new Date(invoice.dueDate), 'dd MMM yyyy') : '--'}
+                          {invoice.dueDate ? safeFormatDate(invoice.dueDate, 'dd MMM yyyy', '--') : '--'}
                         </td>
                         <td className="text-right font-medium text-gray-900">{formatCurrency(invoice.totals?.grandTotal || 0)}</td>
                         <td className="text-right text-green-600">{formatCurrency(invoice.amountPaid || 0)}</td>

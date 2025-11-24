@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { safeFormatDate } from '../utils/dateUtils'
 
 export function makeInvoiceNo(seq, date = new Date(), prefix = 'BPH') {
   try {
@@ -150,7 +151,7 @@ export function amountToWords(amount) {
 }
 
 export function formatInvoiceDate(date) {
-  return format(new Date(date), 'dd MMM yyyy')
+  return safeFormatDate(date, 'dd MMM yyyy', 'N/A')
 }
 
 export function formatCurrency(value) {

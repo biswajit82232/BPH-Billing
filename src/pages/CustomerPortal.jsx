@@ -5,6 +5,7 @@ import { formatCurrency } from '../lib/taxUtils'
 import { format } from 'date-fns'
 import { BRAND } from '../data/branding'
 import { useToast } from '../components/ToastContainer'
+import { safeFormatDate, safeCompareDates } from '../utils/dateUtils'
 
 // Direct link to Google Review form using short link format
 const GOOGLE_REVIEW_URL = 'https://g.page/r/Cfc9X2_ohssSEBM/review'
@@ -30,7 +31,7 @@ export default function CustomerPortal() {
       return invoicePhone === phone
     }).sort((a, b) => {
       // Sort by date descending (newest first)
-      return new Date(b.date) - new Date(a.date)
+      return safeCompareDates(b.date, a.date)
     })
   }, [invoices, searchPhone])
 
@@ -243,7 +244,7 @@ export default function CustomerPortal() {
                           <div className="bg-gray-50 rounded-md p-2">
                             <p className="text-[10px] font-semibold text-gray-500 uppercase mb-0.5">Date</p>
                             <p className="text-xs sm:text-sm font-bold text-gray-900">
-                              {invoice.date ? format(new Date(invoice.date), 'dd MMM yyyy') : '--'}
+                              {invoice.date ? safeFormatDate(invoice.date, 'dd MMM yyyy', '--') : '--'}
                             </p>
                           </div>
                           <div className="bg-blue-50 rounded-md p-2">
@@ -256,7 +257,7 @@ export default function CustomerPortal() {
                             <div className="bg-orange-50 rounded-md p-2 col-span-2 sm:col-span-1">
                               <p className="text-[10px] font-semibold text-orange-600 uppercase mb-0.5">Due Date</p>
                               <p className="text-xs sm:text-sm font-bold text-orange-700">
-                                {format(new Date(invoice.dueDate), 'dd MMM yyyy')}
+                                {safeFormatDate(invoice.dueDate, 'dd MMM yyyy', '--')}
                               </p>
                             </div>
                           )}

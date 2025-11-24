@@ -65,6 +65,13 @@ export default function PrintInvoice({ invoice, className = '', label = 'Print' 
                 .no-print {
                   display: none !important;
                 }
+                * {
+                  page-break-inside: avoid;
+                }
+                #invoice-${invoice.id} {
+                  page-break-after: avoid;
+                  page-break-inside: avoid;
+                }
               }
               body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

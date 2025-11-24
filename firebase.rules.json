@@ -40,6 +40,12 @@
       }
     },
     
+    // Settings: allow app to load/store configuration
+    "settings": {
+      ".read": true,
+      ".write": true
+    },
+
     // Meta: read/write for authenticated users
     "meta": {
       ".read": true,
