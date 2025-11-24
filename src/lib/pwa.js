@@ -2,43 +2,37 @@
  * PWA Registration and Update Handler
  */
 
+import { registerSW } from 'virtual:pwa-register'
+
 export const registerServiceWorker = () => {
-  if (!('serviceWorker' in navigator)) {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     console.log('Service Worker not supported')
     return null
   }
 
-  return navigator.serviceWorker
-    .register('/sw.js', { scope: '/' })
-    .then((registration) => {
-      console.log('Service Worker registered:', registration.scope)
+  let refreshing = false
 
-      // Check for updates periodically
-      setInterval(() => {
-        registration.update()
-      }, 60000) // Check every minute
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      if (refreshing) return
+      if (confirm('New version available! Reload to update?')) {
+        refreshing = true
+        updateSW(true)
+      }
+    },
+    onOfflineReady() {
+      console.log('App ready to work offline')
+    },
+    onRegistered(r) {
+      r &&
+        setInterval(() => {
+          r.update().catch(() => {})
+        }, 60000)
+    },
+  })
 
-      // Handle updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing
-        
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // New service worker available
-            if (confirm('New version available! Reload to update?')) {
-              newWorker.postMessage('SKIP_WAITING')
-              window.location.reload()
-            }
-          }
-        })
-      })
-
-      return registration
-    })
-    .catch((error) => {
-      console.error('Service Worker registration failed:', error)
-      return null
-    })
+  return updateSW
 }
 
 export const unregisterServiceWorker = () => {

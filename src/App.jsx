@@ -8,17 +8,39 @@ import LoadingState from './components/LoadingState'
 import { DataProvider, useData } from './context/DataContext'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import OfflineModuleFallback from './components/OfflineModuleFallback'
+
+const lazyWithOfflineFallback = (importer, featureName) =>
+  lazy(() =>
+    importer().catch((error) => {
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+      const isChunkFailure =
+        typeof error?.message === 'string' &&
+        (error.message.includes('Failed to fetch dynamically imported module') ||
+          error.message.includes('Loading chunk') ||
+          error.message.includes('Importing a module script failed'))
+
+      if (isOffline || isChunkFailure) {
+        console.warn(`Falling back to offline placeholder for ${featureName}`, error)
+        return {
+          default: () => <OfflineModuleFallback featureName={featureName} />,
+        }
+      }
+
+      throw error
+    }),
+  )
 
 // Lazy load heavy pages for code splitting
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const CreateInvoice = lazy(() => import('./pages/CreateInvoice'))
-const InvoiceList = lazy(() => import('./pages/InvoiceList'))
-const Customers = lazy(() => import('./pages/Customers'))
-const Products = lazy(() => import('./pages/Products'))
-const GSTReport = lazy(() => import('./pages/GSTReport'))
-const AgingReport = lazy(() => import('./pages/AgingReport'))
-const BackupRestore = lazy(() => import('./pages/BackupRestore'))
-const CustomerPortal = lazy(() => import('./pages/CustomerPortal'))
+const Dashboard = lazyWithOfflineFallback(() => import('./pages/Dashboard'), 'Dashboard')
+const CreateInvoice = lazyWithOfflineFallback(() => import('./pages/CreateInvoice'), 'Create Invoice')
+const InvoiceList = lazyWithOfflineFallback(() => import('./pages/InvoiceList'), 'Invoices')
+const Customers = lazyWithOfflineFallback(() => import('./pages/Customers'), 'Customers')
+const Products = lazyWithOfflineFallback(() => import('./pages/Products'), 'Products')
+const GSTReport = lazyWithOfflineFallback(() => import('./pages/GSTReport'), 'GST Report')
+const AgingReport = lazyWithOfflineFallback(() => import('./pages/AgingReport'), 'Aging Report')
+const BackupRestore = lazyWithOfflineFallback(() => import('./pages/BackupRestore'), 'Settings & Backup')
+const CustomerPortal = lazyWithOfflineFallback(() => import('./pages/CustomerPortal'), 'Customer Portal')
 
 function RoutedApp() {
   const { loading, loadingProgress, firebaseReady } = useData()

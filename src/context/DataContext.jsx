@@ -211,7 +211,7 @@ export const DataProvider = ({ children }) => {
   }, [])
 
   useEffect(() => {
-    if (!firebaseReady) {
+    if (!firebaseReady || !online) {
       setLoading(false)
       setLoadingProgress(0)
       return
@@ -686,7 +686,7 @@ export const DataProvider = ({ children }) => {
     })
 
     return () => unsubscribes.forEach((fn) => fn())
-  }, [firebaseReady, db])
+  }, [firebaseReady, db, online])
 
   const persistMeta = async (nextMeta) => {
     setMeta(nextMeta)
