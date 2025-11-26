@@ -982,16 +982,23 @@ export const DataProvider = ({ children }) => {
     let nextSequence = (currentMeta?.invoiceSequence || 0) + 1
     const invoiceDate = safeParseDate(form.date) || new Date()
     const manualInvoiceNo = (form.invoiceNo || '').trim()
-    const existingInvoices = (latestData.invoices || invoices || []).filter(Boolean)
+    let resolvedInvoices = Array.isArray(invoices) ? invoices : []
+    const cachedInvoices = Array.isArray(latestData.invoices) ? latestData.invoices : []
+    if ((!firebaseReady || !online) || resolvedInvoices.length === 0) {
+      resolvedInvoices = cachedInvoices.length ? cachedInvoices : resolvedInvoices
+    }
+    const existingInvoices = (resolvedInvoices || []).filter(Boolean)
 
     let invoiceNo = manualInvoiceNo
     if (invoiceNo) {
-      const duplicateManual = existingInvoices.some(
-        (inv) => inv.invoiceNo?.toLowerCase() === invoiceNo.toLowerCase() && inv.id !== form.id,
+      const conflictingInvoice = existingInvoices.find(
+        (inv) => inv?.invoiceNo?.toLowerCase() === invoiceNo.toLowerCase() && inv.id !== form.id,
       )
-      if (duplicateManual) {
-        const error = new Error('Invoice number already exists')
+      if (conflictingInvoice) {
+        const conflictLabel = conflictingInvoice.invoiceNo ? ` (${conflictingInvoice.invoiceNo})` : ''
+        const error = new Error(`Invoice number "${invoiceNo}" is already used${conflictLabel ? ` by invoice${conflictLabel}` : ''}.`)
         error.code = 'DUPLICATE_INVOICE_NO'
+        error.conflictInvoiceId = conflictingInvoice.id || null
         throw error
       }
     } else {
