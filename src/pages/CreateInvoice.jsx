@@ -471,12 +471,16 @@ export default function CreateInvoice() {
       })
     } catch (error) {
       console.error('Error saving invoice:', error)
-      if (error.message && error.message.includes('CONFLICT')) {
+      if (error?.code === 'DUPLICATE_INVOICE_NO' || error?.message?.includes('Invoice number already exists')) {
+        toast.error('Invoice number already exists. Please choose a different value.', { duration: 4000 })
+        return
+      }
+      if (error?.message && error.message.includes('CONFLICT')) {
         toast.error('Invoice was modified by another user. Refreshing...', { duration: 5000 })
         // Refresh page to get latest version
         safeReload(2000)
       } else {
-      toast.error('Failed to save invoice. Please try again.')
+        toast.error('Failed to save invoice. Please try again.')
       }
     }
   }

@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import ConfirmModal from '../components/ConfirmModal'
 import { formatCurrency, formatInvoiceDate } from '../lib/taxUtils'
+import { useToast } from '../components/ToastContainer'
 
 export default function DistributorPayables() {
   const {
@@ -15,6 +16,7 @@ export default function DistributorPayables() {
     invoices,
   } = useData()
 
+  const toast = useToast()
   const payables = useMemo(() => calculateDistributorPayables(), [calculateDistributorPayables])
   const [selectedDistributorId, setSelectedDistributorId] = useState(null)
   const [showSettlementModal, setShowSettlementModal] = useState(false)
@@ -122,26 +124,56 @@ export default function DistributorPayables() {
 
   const handleSettlementSubmit = async (event) => {
     event.preventDefault()
-    if (!settlementForm.distributorId || !settlementForm.amount) return
-    await recordDistributorSettlement({
-      ...settlementForm,
-      id: editingSettlement?.id,
-      amount: Number(settlementForm.amount) || 0,
-    })
-    setShowSettlementModal(false)
-    setEditingSettlement(null)
+
+    if (!settlementForm.distributorId) {
+      toast.error('Select a distributor before recording settlement')
+      return
+    }
+    const numericAmount = Number(settlementForm.amount)
+    if (!numericAmount || numericAmount <= 0) {
+      toast.error('Enter a valid settlement amount greater than zero')
+      return
+    }
+
+    try {
+      await recordDistributorSettlement({
+        ...settlementForm,
+        id: editingSettlement?.id,
+        amount: numericAmount,
+      })
+      toast.success(editingSettlement ? 'Settlement updated successfully' : 'Settlement recorded successfully')
+      setShowSettlementModal(false)
+      setEditingSettlement(null)
+    } catch (error) {
+      console.error('Failed to record distributor settlement:', error)
+      toast.error(error?.message || 'Failed to save settlement. Please try again.')
+    }
   }
 
   const handleDeleteSettlement = async () => {
     if (!confirmDelete.settlementId) return
-    await deleteDistributorSettlement(confirmDelete.settlementId)
-    setConfirmDelete({ isOpen: false, settlementId: null })
+    try {
+      await deleteDistributorSettlement(confirmDelete.settlementId)
+      toast.success('Settlement deleted')
+    } catch (error) {
+      console.error('Failed to delete settlement:', error)
+      toast.error('Could not delete settlement. Please try again.')
+    } finally {
+      setConfirmDelete({ isOpen: false, settlementId: null })
+    }
   }
 
   const handleDeleteDistributor = async () => {
     if (!confirmDeleteDistributor.distributorId) return
-    await deleteDistributor(confirmDeleteDistributor.distributorId)
-    setConfirmDeleteDistributor({ isOpen: false, distributorId: null, distributorName: '' })
+    try {
+      await deleteDistributor(confirmDeleteDistributor.distributorId)
+      toast.success('Distributor deleted')
+    } catch (error) {
+      console.error('Failed to delete distributor:', error)
+      toast.error('Could not delete distributor. Please try again.')
+    } finally {
+      setConfirmDeleteDistributor({ isOpen: false, distributorId: null, distributorName: '' })
+    }
   }
 
   // Get all distributors (including ones with no balance)
