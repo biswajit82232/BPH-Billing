@@ -40,11 +40,12 @@ export default function Customers() {
 
   // Filter customers
   const filteredCustomers = useMemo(() => {
-    return customers.filter((customer) => {
-      const query = debouncedSearch.toLowerCase()
+    const query = debouncedSearch.toLowerCase()
+
+    const filtered = customers.filter((customer) => {
       const matchesSearch =
         !query ||
-        customer.name.toLowerCase().includes(query) ||
+        customer.name?.toLowerCase().includes(query) ||
         customer.email?.toLowerCase().includes(query) ||
         customer.phone?.includes(query) ||
         customer.gstin?.toLowerCase().includes(query)
@@ -58,6 +59,22 @@ export default function Customers() {
       
       return matchesSearch && matchesGst && matchesState
     })
+
+    // Always show the newest/most recently updated customers first
+    return filtered
+      .slice()
+      .sort((a, b) => {
+        const aTime = a._lastModified || a.updatedAt || a.createdAt || 0
+        const bTime = b._lastModified || b.updatedAt || b.createdAt || 0
+        if (aTime !== bTime) {
+          return bTime - aTime
+        }
+        const createdDiff = (b.createdAt || 0) - (a.createdAt || 0)
+        if (createdDiff !== 0) {
+          return createdDiff
+        }
+        return (a.name || '').localeCompare(b.name || '')
+      })
   }, [customers, debouncedSearch, gstFilter, stateFilter])
 
   const hasActiveFilters = gstFilter !== 'all' || stateFilter
