@@ -142,7 +142,7 @@ export default function SignaturePad({ value, onChange, label = 'Signature', wid
               Clear
             </button>
           )}
-        </div>
+          </div>
       </div>
       
       {isMobile && (
