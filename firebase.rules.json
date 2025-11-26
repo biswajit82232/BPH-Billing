@@ -1,0 +1,64 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "invoices": {
+      ".read": true,
+      ".write": true,
+      "$invoiceId": {
+        ".validate": "newData.hasChildren(['invoiceNo','date','items','totals']) && newData.child('invoiceNo').isString() && newData.child('date').isString() && newData.child('items').hasChildren() && newData.child('totals').hasChildren()"
+      }
+    },
+    "customers": {
+      ".read": true,
+      ".write": true,
+      "$customerId": {
+        ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length > 0"
+      }
+    },
+    "products": {
+      ".read": true,
+      ".write": true,
+      "$productId": {
+        ".validate": "newData.hasChildren(['name','unit_price']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('unit_price').isNumber()"
+      }
+    },
+    "users": {
+      ".read": true,
+      ".write": true,
+      "$userId": {
+        ".validate": "newData.hasChildren(['username']) && newData.child('username').isString() && newData.child('username').val().length > 0"
+      }
+    },
+    "settings": {
+      ".read": true,
+      ".write": true
+    },
+    "meta": {
+      ".read": true,
+      ".write": true
+    },
+    "activity": {
+      ".read": true,
+      ".write": true
+    },
+    "purchases": {
+      ".read": true,
+      ".write": true
+    },
+    "distributors": {
+      ".read": true,
+      ".write": true,
+      "$distributorId": {
+        ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length > 0"
+      }
+    },
+    "distributorSettlements": {
+      ".read": true,
+      ".write": true,
+      "$settlementId": {
+        ".validate": "newData.hasChildren(['distributorId','amount','date']) && newData.child('distributorId').isString() && newData.child('amount').isNumber() && newData.child('date').isString()"
+      }
+    }
+  }
+}

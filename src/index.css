@@ -1,0 +1,617 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f8f9fa;
+  color: #1f2937;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+  min-height: -webkit-fill-available; /* iOS Safari fix */
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  background: #f7f8fa;
+  overflow-x: hidden;
+  /* Smooth scrolling like Zoho */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  letter-spacing: 0.01em;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+  min-height: -webkit-fill-available; /* iOS Safari fix */
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  overflow-x: hidden;
+}
+
+/* Mobile bottom safe area */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+/* Full screen coverage for mobile - ensure no black space */
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
+}
+
+/* Smooth pull-to-refresh animations */
+@keyframes pullRefreshSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: pullRefreshSpin 1s linear infinite;
+}
+
+/* Smooth pull animation */
+.pull-to-refresh-indicator {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease-out;
+  will-change: transform, opacity;
+}
+
+/* Ensure content is scrollable on mobile */
+@media (max-width: 768px) {
+  main {
+    padding-bottom: 2rem !important;
+  }
+  
+  /* Fix for mobile browsers with dynamic viewport */
+  html {
+    height: -webkit-fill-available;
+  }
+  
+  body {
+    height: -webkit-fill-available;
+  }
+}
+
+/* Smooth momentum scrolling for mobile */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+.glass-panel {
+  @apply bg-white rounded-md border border-gray-200 shadow-sm transition-all duration-200;
+}
+
+.glass-panel:hover {
+  @apply shadow-md border-gray-300;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, #0072CE 0%, #005a9e 100%);
+  box-shadow: 0 2px 8px rgba(0, 114, 206, 0.15);
+}
+
+.btn-primary {
+  @apply bg-brand-primary text-white font-medium rounded-md px-4 py-2 hover:bg-brand-dark hover:shadow-md transition-all duration-150 active:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed shadow-sm text-xs;
+}
+
+/* Touch-friendly buttons for mobile */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Signature Pad Modal - Ensure footer is always visible on mobile */
+@media (max-width: 768px) {
+  .signature-modal-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Ensure modal uses proper viewport height */
+  .signature-modal-container {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height */
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+/* Mobile - compact buttons with rounded square edges */
+@media (max-width: 768px) {
+  .btn-primary {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    touch-action: manipulation;
+    min-height: 1.75rem;
+  }
+  
+  /* Ensure buttons are tappable on mobile - minimum touch target size */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Small buttons need larger touch targets */
+  button.text-xs {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Zoho-style compact tables */
+table {
+  @apply border-collapse w-full;
+}
+
+table thead {
+  @apply bg-gray-50;
+}
+
+table th {
+  @apply font-semibold text-gray-700 text-left text-[11px] uppercase tracking-wider px-3 py-2 border-b border-gray-200;
+}
+
+table td {
+  @apply px-3 py-2 text-xs text-gray-900 border-b border-gray-100;
+}
+
+table tbody tr {
+  @apply transition-all duration-150;
+}
+
+table tbody tr:nth-child(even) {
+  @apply bg-gray-50/30;
+}
+
+table tbody tr:hover {
+  @apply bg-blue-50/50;
+}
+
+table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+/* Smooth scrollbar - Zoho style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-50;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Mobile-friendly and compact */
+@media (max-width: 768px) {
+  /* Container constraints for landscape mode - prevent full width */
+  @media (orientation: landscape) {
+    .max-w-7xl {
+      max-width: 95%;
+    }
+    
+    main > div {
+      max-width: 95%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+  /* Hide scrollbar on mobile for cleaner look */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  /* Better scrolling on mobile */
+  * {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Compact inputs - prevent zoom on iOS while keeping small */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important; /* Prevents iOS zoom */
+    padding: 0.5rem 0.75rem !important;
+    border: 1.5px solid #d1d5db !important;
+  }
+  
+  /* Compact buttons - smaller with rounded square edges */
+  button:not(.btn-primary):not(.btn-secondary):not(.btn-danger):not(.btn-success) {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    min-height: 1.75rem;
+  }
+  
+  /* Compact cards and panels */
+  .glass-panel {
+    padding: 0.625rem;
+  }
+  
+  /* Compact table cells */
+  table th, table td {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  
+  /* Compact headings */
+  h1 {
+    font-size: 1.125rem;
+  }
+  
+  h2 {
+    font-size: 1rem;
+  }
+  
+  h3 {
+    font-size: 0.875rem;
+  }
+}
+
+/* Smooth scrolling containers */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Better table scrolling on mobile */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+}
+
+/* Zoho-style compact form inputs - catch all inputs */
+input,
+select,
+textarea {
+  @apply rounded-md px-3 py-2 bg-white text-gray-900 placeholder-gray-400 text-xs transition-all duration-150;
+  border: 1.5px solid #d1d5db !important; /* Gray-300 border - clean and visible */
+  display: block !important;
+  width: 100% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Specific overrides for special input types */
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"] {
+  width: auto !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Ensure labels are visible */
+label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin-bottom: 0.25rem;
+}
+
+/* Screen reader only - visually hidden but accessible */
+label.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+/* Mobile-friendly inputs */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    line-height: 1.5rem !important;
+    border: 2px solid #d1d5db !important;
+  }
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  @apply outline-none ring-2 ring-brand-primary/30;
+  border-color: #0072CE !important;
+  box-shadow: 0 0 0 3px rgba(0, 114, 206, 0.1) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: #9ca3af !important; /* Gray-400 on hover */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):disabled,
+select:disabled,
+textarea:disabled {
+  border-color: #9ca3af !important; /* Gray-400 for disabled */
+  background-color: #f3f4f6 !important; /* Gray-100 background */
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Button variants - Zoho compact style */
+.btn-secondary {
+  @apply bg-white text-brand-primary border border-brand-primary font-medium rounded-md px-4 py-2 hover:bg-brand-primary hover:text-white hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white font-medium rounded-md px-4 py-2 hover:bg-red-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+}
+
+.btn-success {
+  @apply bg-green-600 text-white font-medium rounded-md px-4 py-2 hover:bg-green-700 hover:shadow-md transition-all duration-150 shadow-sm text-xs;
+}
+
+/* Mobile - compact buttons with rounded square edges */
+@media (max-width: 768px) {
+  .btn-secondary,
+  .btn-danger,
+  .btn-success {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    border-radius: 0.375rem; /* rounded-md - less rounded, more square */
+    touch-action: manipulation;
+    min-height: 1.75rem;
+  }
+}
+
+/* Toast animations */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Confirmation modal animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* PWA Install Prompt animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Pulse animation for notifications */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Shimmer animation for loading bar - smooth and optimized */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) translateZ(0);
+  }
+  100% {
+    transform: translateX(200%) translateZ(0);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Screen reader only - visually hidden but accessible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to content link - visible on focus */
+.skip-to-content:focus {
+  position: absolute !important;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  background-color: #0072CE;
+  color: white;
+  border-radius: 0.375rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  outline: 2px solid #0072CE;
+  outline-offset: 2px;
+  text-decoration: none;
+}
+
+/* Skeleton loading animation */
+@keyframes skeleton-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Signature rotation for PDF - counter-clockwise (landscape orientation) */
+.signature-rotated {
+  transform: rotate(-90deg);
+  transform-origin: center center;
+  display: inline-block;
+  /* Adjust dimensions after rotation - width becomes height and vice versa */
+  width: auto;
+  height: auto;
+}
+
+/* Signature container - ensures proper alignment with name */
+.signature-container {
+  position: relative;
+  overflow: visible;
+}
+
+/* Ensure signature container doesn't affect text alignment */
+.signature-container::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  .glass-panel {
+    box-shadow: none;
+    border: 1px solid #e5e7eb;
+  }
+  
+  /* Rotate signatures counter-clockwise in PDF */
+  .signature-rotated {
+    transform: rotate(-90deg);
+    transform-origin: center center;
+  }
+  
+  @page {
+    margin: 1cm;
+  }
+}
+
+
